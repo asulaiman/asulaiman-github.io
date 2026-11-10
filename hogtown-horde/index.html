@@ -53,6 +53,8 @@ canvas{display:block;width:100%;height:100%;touch-action:none;background:var(--n
 .pucks p s.on{background:var(--bone)}
 .top{position:absolute;top:8px;right:8px;display:flex;gap:6px}
 @media (max-width:560px){.where{top:46px}.dist{top:40px}}
+.stage::after{content:"";position:absolute;inset:0;pointer-events:none;z-index:1;background:radial-gradient(ellipse at 50% 42%,transparent 52%,#05080dd9 100%)}
+.hud,.top{z-index:2}
 .top button{
   font:600 13px var(--display);letter-spacing:.08em;text-transform:uppercase;
   background:#0a111ccc;color:var(--bone);border:1px solid #3a4a6a;padding:6px 10px;cursor:pointer;
@@ -211,12 +213,19 @@ catch (e) {
 const scene = new T.Scene();
 const camera = new T.PerspectiveCamera(62, 16 / 9, 0.1, 1200);
 scene.fog = new T.Fog(0x3e2c3c, 28, 150);
-scene.add(new T.AmbientLight(0x8fa0c8, 0.85));
-const moonLight = new T.DirectionalLight(0xfff0d8, 0.75); moonLight.position.set(-6, 12, 8); scene.add(moonLight);
+scene.add(new T.HemisphereLight(0x8fa0c8, 0x2a2420, 0.7));
+const moonLight = new T.DirectionalLight(0xcfd8ff, 0.65); moonLight.position.set(-9, 20, 8); moonLight.target.position.set(0, 0, -12); scene.add(moonLight, moonLight.target);
+const COARSE = matchMedia('(pointer:coarse)').matches;
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = T.PCFSoftShadowMap;
+moonLight.castShadow = true; moonLight.shadow.mapSize.set(COARSE ? 1024 : 2048, COARSE ? 1024 : 2048);
+Object.assign(moonLight.shadow.camera, {left:-16, right:16, top:30, bottom:-30, near:1, far:80}); moonLight.shadow.bias = -0.0004; moonLight.shadow.normalBias = 0.03;
+const lamps = []; for (let i = 0; i < 4; i++) { const l = new T.PointLight(0xffb060, 0, 26, 2); scene.add(l); lamps.push(l); }
+const shadows = o => o.traverse(m => { if (m.isMesh && m.material.isMeshStandardMaterial) m.castShadow = true; });
 
+let pxCap = 2, lampsOn = true;
 function resize() {
   const st = $('stage'), w = st.clientWidth, h = st.clientHeight; if (!w || !h) return;
-  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+  renderer.setPixelRatio(Math.min(pxCap, window.devicePixelRatio || 1));
   renderer.setSize(w, h, false);
   camera.aspect = w / h; camera.fov = w / h < 0.8 ? 84 : w / h < 1.25 ? 72 : 62; camera.updateProjectionMatrix();
 }
@@ -224,16 +233,45 @@ addEventListener('resize', resize);
 if (window.ResizeObserver) new ResizeObserver(resize).observe($('stage'));
 
 /* ---------- mesh helpers ---------- */
-const BOX = new T.BoxGeometry(1, 1, 1), CYL = new T.CylinderGeometry(1, 1, 1, 14), PLANE = new T.PlaneGeometry(1, 1);
+const BOX = new T.BoxGeometry(1, 1, 1), CYL = new T.CylinderGeometry(1, 1, 1, 20), PLANE = new T.PlaneGeometry(1, 1);
+const SPH = new T.SphereGeometry(1, 16, 12), HEMI = new T.SphereGeometry(1, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2);
 const mats = {};
-const lam = c => mats['l' + c] || (mats['l' + c] = new T.MeshLambertMaterial({color:c}));
+const lam = c => mats['l' + c] || (mats['l' + c] = new T.MeshStandardMaterial({color:c, roughness:0.82, metalness:0}));
+const gloss = c => mats['g' + c] || (mats['g' + c] = new T.MeshStandardMaterial({color:c, roughness:0.32, metalness:0.45}));
+const glass = new T.MeshStandardMaterial({color:0x0c1016, roughness:0.12, metalness:0.7});
 const bas = (c, noFog) => mats['b' + c + noFog] || (mats['b' + c + noFog] = new T.MeshBasicMaterial({color:c, fog:!noFog}));
+const M = mat => typeof mat === 'number' ? lam(mat) : mat;
 function box(parent, w, h, d, mat, x, y, z) {
-  const m = new T.Mesh(BOX, typeof mat === 'number' ? lam(mat) : mat); m.scale.set(w, h, d); m.position.set(x || 0, y || 0, z || 0); parent.add(m); return m;
+  const m = new T.Mesh(BOX, M(mat)); m.scale.set(w, h, d); m.position.set(x || 0, y || 0, z || 0); parent.add(m); return m;
 }
 function cyl(parent, r, h, mat, x, y, z, rTop) {
-  const m = new T.Mesh(rTop === undefined ? CYL : new T.CylinderGeometry(rTop, r, h, 12), typeof mat === 'number' ? lam(mat) : mat);
+  const m = new T.Mesh(rTop === undefined ? CYL : new T.CylinderGeometry(rTop, r, h, 20), M(mat));
   if (rTop === undefined) m.scale.set(r, h, r); m.position.set(x || 0, y || 0, z || 0); parent.add(m); return m;
+}
+function sph(parent, rx, ry, rz, mat, x, y, z, geo) {
+  const m = new T.Mesh(geo || SPH, M(mat)); m.scale.set(rx, ry, rz); m.position.set(x || 0, y || 0, z || 0); parent.add(m); return m;
+}
+function cap(parent, r, h, mat, x, y, z) { // vertical capsule, h tip to tip
+  const g = new T.Group(), c = h - 2 * r; g.position.set(x || 0, y || 0, z || 0);
+  cyl(g, r, c, mat); sph(g, r, r, r, mat, 0, c / 2, 0); sph(g, r, r, r, mat, 0, -c / 2, 0); parent.add(g); return g;
+}
+const geoCache = {};
+function rbox(parent, w, h, d, r, mat, x, y, z) { // box with rounded edges
+  const k = [w, h, d, r].join(); let geo = geoCache[k];
+  if (!geo) {
+    const b = r / 2, a = w / 2 - b, c = h / 2 - b, q = Math.min(b, a, c), sh = new T.Shape();
+    sh.moveTo(-a + q, -c); sh.lineTo(a - q, -c); sh.quadraticCurveTo(a, -c, a, -c + q); sh.lineTo(a, c - q); sh.quadraticCurveTo(a, c, a - q, c);
+    sh.lineTo(-a + q, c); sh.quadraticCurveTo(-a, c, -a, c - q); sh.lineTo(-a, -c + q); sh.quadraticCurveTo(-a, -c, -a + q, -c);
+    geo = geoCache[k] = new T.ExtrudeGeometry(sh, {depth:d - 2 * b, bevelEnabled:true, bevelThickness:b, bevelSize:b, bevelSegments:3, curveSegments:6}); geo.translate(0, 0, -(d - 2 * b) / 2);
+  }
+  const m = new T.Mesh(geo, M(mat)); m.position.set(x || 0, y || 0, z || 0); parent.add(m); return m;
+}
+function profile(key, pts, depth, bevel) { // side-view outline swept across the width; outline x runs along the street
+  if (geoCache[key]) return geoCache[key];
+  const sh = new T.Shape(); sh.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) { const q = pts[i]; if (q.length === 4) sh.quadraticCurveTo(q[0], q[1], q[2], q[3]); else sh.lineTo(q[0], q[1]); }
+  const geo = new T.ExtrudeGeometry(sh, {depth, bevelEnabled:bevel > 0, bevelThickness:bevel, bevelSize:bevel * 0.6, bevelSegments:3, curveSegments:10});
+  geo.translate(0, 0, -depth / 2); geo.rotateY(Math.PI / 2); return geoCache[key] = geo;
 }
 function canvasTex(w, h, draw) {
   const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h);
@@ -288,23 +326,42 @@ const roadTex = canvasTex(512, 512, (g) => {
   g.fillStyle = '#1a1e27'; for (let y = 0; y < 512; y += 64) g.fillRect((8 - 1.15) * m, y, 2.3 * m, 2);
   g.fillStyle = '#8a929e'; for (const s of [-1, 1]) g.fillRect((8 + s * 0.7475) * m - 2, 0, 4, 512); // rails at TTC gauge, 1495 mm
   g.fillStyle = '#c9b458'; for (const s of [-1, 1]) for (const y of [40, 296]) g.fillRect((8 + s * 1.22) * m - 2, y, 4, 110);
+  g.strokeStyle = '#161a22'; g.lineWidth = 1; for (let i = 0; i < 8; i++) { let x = 110 + hh(i * 5.3) * 290, y = hh(i * 9.1) * 512; g.beginPath(); g.moveTo(x, y); for (let k = 0; k < 6; k++) { x += (hh(i + k * 3.7) - 0.5) * 30; y += 8 + hh(i * 2 + k) * 14; g.lineTo(x, y); } g.stroke(); }
+  g.fillStyle = '#171b24'; g.fillRect(150, 300, 70, 46); g.fillRect(330, 90, 54, 80);       // tar patches
+  g.fillStyle = '#2a2f3a'; g.beginPath(); g.arc(352, 400, 12, 0, 7); g.fill(); g.strokeStyle = '#14171e'; g.beginPath(); g.arc(352, 400, 9, 0, 7); g.stroke(); // manhole
   g.fillStyle = '#3a3d46'; g.fillRect(0, 0, 3.2 * m, 512); g.fillRect(512 - 3.2 * m, 0, 3.2 * m, 512); // sidewalks
   g.fillStyle = '#2c2f38'; for (let y = 0; y < 512; y += 64) { g.fillRect(0, y, 3.2 * m, 2); g.fillRect(512 - 3.2 * m, y, 3.2 * m, 2); }
   g.fillStyle = '#62666e'; g.fillRect(3.2 * m - 5, 0, 5, 512); g.fillRect(512 - 3.2 * m, 0, 5, 512);
 });
 roadTex.wrapT = T.RepeatWrapping; roadTex.repeat.set(1, 26);
-const road = new T.Mesh(new T.PlaneGeometry(16, 416), new T.MeshBasicMaterial({map:roadTex}));
+const wetTex = canvasTex(256, 256, (g) => { g.fillStyle = '#c4c4c4'; g.fillRect(0, 0, 256, 256); for (let i = 0; i < 16; i++) { g.fillStyle = hh(i) > 0.5 ? '#2c2c2c' : '#5a5a5a'; g.beginPath(); g.ellipse(60 + hh(i * 3.3) * 140, hh(i * 7.9) * 256, 8 + hh(i * 2.1) * 22, 5 + hh(i * 4.7) * 12, hh(i) * 3, 0, 7); g.fill(); } });
+wetTex.wrapT = T.RepeatWrapping;
+const road = new T.Mesh(new T.PlaneGeometry(16, 416), new T.MeshStandardMaterial({map:roadTex, roughnessMap:wetTex, roughness:1, metalness:0.05, color:0xd8dcec}));
+road.receiveShadow = true;
+for (const s of [-1, 1]) box(scene, 0.3, 0.16, 416, 0x6a6e78, s * 4.95, 0.08, -188);
 road.rotation.x = -Math.PI / 2; road.position.set(0, 0, -188); scene.add(road);
 const skirt = new T.Mesh(new T.PlaneGeometry(400, 416), bas(0x12151c)); skirt.rotation.x = -Math.PI / 2; skirt.position.set(0, -0.05, -188); scene.add(skirt);
 box(scene, 0.04, 0.04, 416, bas(0x0a0c12), 0, 5.6, -188); // overhead contact wire
 
 /* ---------- buildings ---------- */
 function facade(wall, dim, lit, cols, rows, p, extra) {
-  return new T.MeshBasicMaterial({map:canvasTex(128, 256, (g, w, h) => {
+  return new T.MeshBasicMaterial({map:canvasTex(256, 512, (g, w, h) => {
     g.fillStyle = wall; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 46; i++) { g.fillStyle = 'rgba(0,0,0,' + (0.03 + Math.random() * 0.06) + ')'; g.fillRect(Math.random() * w, 0, 2 + Math.random() * 7, h * Math.random()); }
     const cw = w / cols, ch = h / rows;
-    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) { g.fillStyle = Math.random() < p ? lit : dim; g.fillRect(c * cw + cw * 0.2, r * ch + ch * 0.2, cw * 0.6, ch * 0.6); }
-    if (extra) extra(g, w, h);
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const x = c * cw + cw * 0.18, y = r * ch + ch * 0.2, ww = cw * 0.64, wh = ch * 0.58;
+      g.fillStyle = 'rgba(0,0,0,.4)'; g.fillRect(x - 2, y - 2, ww + 4, wh + 4);
+      if (Math.random() < p) {
+        const gr = g.createLinearGradient(0, y, 0, y + wh); gr.addColorStop(0, lit); gr.addColorStop(1, 'rgba(0,0,0,.25)'); g.fillStyle = lit; g.fillRect(x, y, ww, wh); g.fillStyle = gr; g.globalAlpha = 0.6; g.fillRect(x, y, ww, wh); g.globalAlpha = 1;
+        if (Math.random() < 0.45) { g.fillStyle = 'rgba(0,0,0,.4)'; g.fillRect(x, y, ww * (0.25 + Math.random() * 0.4), wh); }
+      } else { g.fillStyle = dim; g.fillRect(x, y, ww, wh); g.fillStyle = 'rgba(150,180,220,.10)'; g.fillRect(x, y, ww, wh * 0.38); }
+      g.fillStyle = wall; g.fillRect(x + ww / 2 - 1, y, 2, wh);
+      g.fillStyle = 'rgba(255,255,255,.12)'; g.fillRect(x - 3, y + wh + 2, ww + 6, 2);
+    }
+    g.fillStyle = 'rgba(255,255,255,.05)'; for (let r = 0; r <= rows; r++) g.fillRect(0, r * ch - 1, w, 2);
+    const sh = g.createLinearGradient(0, 0, 0, h); sh.addColorStop(0, 'rgba(0,0,12,.38)'); sh.addColorStop(0.7, 'rgba(0,0,0,0)'); sh.addColorStop(1, 'rgba(255,170,80,.14)'); g.fillStyle = sh; g.fillRect(0, 0, w, h);
+    if (extra) { g.save(); g.scale(2, 2); extra(g, w / 2, h / 2); g.restore(); }
   })});
 }
 const shopfront = col => (g, w, h) => { g.fillStyle = '#120b0a'; g.fillRect(0, h * 0.72, w, h * 0.28); g.fillStyle = col; g.fillRect(0, h * 0.66, w, h * 0.07); g.fillStyle = 'rgba(255,180,90,.5)'; g.fillRect(w * 0.1, h * 0.78, w * 0.3, h * 0.14); };
@@ -335,8 +392,8 @@ const SLOT = 14, NB = 15, buildings = [];
 const roofGeo = new T.ConeGeometry(1, 1, 4); roofGeo.rotateY(Math.PI / 4);
 for (let i = 0; i < NB * 2; i++) {
   const g = new T.Group(), side = i % 2 ? 1 : -1;
-  const b = {g, side, serial:i, main:new T.Mesh(BOX, BV[0][0].m), roof:new T.Mesh(roofGeo, lam(0x2a2026)), bill:new T.Mesh(PLANE, BILL[0]), blade:new T.Mesh(PLANE, BLADE[0])};
-  g.add(b.main, b.roof, b.bill, b.blade);
+  const b = {g, side, serial:i, main:new T.Mesh(BOX, BV[0][0].m), roof:new T.Mesh(roofGeo, lam(0x2a2026)), bill:new T.Mesh(PLANE, BILL[0]), blade:new T.Mesh(PLANE, BLADE[0]), cornice:new T.Mesh(BOX, bas(0x16171d))};
+  g.add(b.main, b.roof, b.bill, b.blade, b.cornice);
   b.bill.scale.set(4.6, 2.9, 1); b.bill.position.set(side * 6.4, 7, 0); b.blade.scale.set(1.2, 4.4, 1); b.blade.position.set(side * 7.3, 5.4, 0);
   g.position.z = 10 - Math.floor(i / 2) * SLOT; scene.add(g); buildings.push(b);
 }
@@ -346,6 +403,7 @@ function skin(b) {
   const lap = Math.floor(wd / 3000), ch = lap * 3000 + CITY_HALL;
   b.main.visible = !(b.side < 0 && Math.abs(wd - ch) < 34);
   b.main.material = v.m; b.main.scale.set(13, v.h, SLOT - 0.6 - r * 1.2); b.main.position.set(b.side * (14.6 + r * 1.2), v.h / 2, 0);
+  b.cornice.visible = b.main.visible && !v.roof; b.cornice.scale.set(13.6, 0.7, b.main.scale.z + 0.6); b.cornice.position.set(b.main.position.x, v.h + 0.35, 0);
   b.roof.visible = !!v.roof; if (v.roof) { b.roof.scale.set(9.4, 3.4, 9.4); b.roof.position.set(b.side * (14.6 + r * 1.2), v.h + 1.7, 0); }
   b.bill.visible = d === 3 && r > 0.3; if (b.bill.visible) b.bill.material = BILL[b.serial % 4];
   b.blade.visible = d === 4 && r > 0.25; if (b.blade.visible) b.blade.material = BLADE[b.serial % 4];
@@ -363,16 +421,18 @@ const cityHall = new T.Group(); scene.add(cityHall);
 })();
 
 /* ---------- street furniture: lights, signs, lanterns ---------- */
-const poolMat = new T.MeshBasicMaterial({map:glowTex, color:0xffb347, blending:T.AdditiveBlending, transparent:true, opacity:0.5, depthWrite:false});
+const poolMat = new T.MeshBasicMaterial({map:glowTex, color:0xffb347, blending:T.AdditiveBlending, transparent:true, opacity:0.22, depthWrite:false});
 const lights = [];
 for (let i = 0; i < 12; i++) {
   const g = new T.Group(), side = i % 2 ? 1 : -1;
-  box(g, 0.16, 6.4, 0.16, 0x12151c, side * 5.3, 3.2, 0); box(g, 1.6, 0.1, 0.1, 0x12151c, side * 4.6, 6.3, 0);
-  const lamp = box(g, 0.5, 0.14, 0.3, bas(0xffd08a), side * 3.9, 6.22, 0);
+  cyl(g, 0.11, 6.1, 0x1a1e27, side * 5.3, 3.05, 0, 0.07); cyl(g, 0.17, 0.5, 0x1a1e27, side * 5.3, 0.25, 0, 0.12);
+  const ak = 'arm' + side, ag = geoCache[ak] || (geoCache[ak] = new T.TubeGeometry(new T.QuadraticBezierCurve3(new T.Vector3(side * 5.3, 6.05, 0), new T.Vector3(side * 5.25, 6.85, 0), new T.Vector3(side * 3.95, 6.42, 0)), 12, 0.05, 8));
+  g.add(new T.Mesh(ag, lam(0x1a1e27))); sph(g, 0.36, 0.1, 0.17, 0x1a1e27, side * 3.85, 6.4, 0);
+  const lamp = sph(g, 0.26, 0.06, 0.12, bas(0xffd08a), side * 3.85, 6.34, 0);
   const gl = glow(g, 0xffb347, 5, side * 3.9, 6.1, 0, 0.7);
   const pool = new T.Mesh(PLANE, poolMat); pool.rotation.x = -Math.PI / 2; pool.scale.set(11, 11, 1); pool.position.set(side * 3.2, 0.03, 0); g.add(pool);
   if (side < 0) box(g, 10.6, 0.03, 0.03, bas(0x0a0c12), 0, 5.75, 0);
-  g.position.z = 6 - i * 18; scene.add(g); lights.push({g, lamp, gl, pool, serial:i});
+  g.position.z = 6 - i * 18; scene.add(g); lights.push({g, lamp, gl, pool, serial:i, side, on:true});
 }
 const signTex = {};
 function signMat(d, street) {
@@ -386,7 +446,7 @@ function signMat(d, street) {
 const signs = [];
 for (let i = 0; i < 4; i++) {
   const g = new T.Group(), side = i % 2 ? -1 : 1;
-  box(g, 0.1, 3.6, 0.1, 0x12151c, side * 5.6, 1.8, 0);
+  cyl(g, 0.05, 4.3, 0x2a2f3a, side * 5.6, 2.15, 0);
   const pl = new T.Mesh(PLANE, signMat(DISTRICTS[0], DISTRICTS[0].streets[i % 3])); pl.scale.set(2.5, 0.94, 1); pl.position.set(side * 5.6, 3.9, 0.06); g.add(pl);
   g.position.z = -20 - i * 45; scene.add(g); signs.push({g, pl, serial:i});
 }
@@ -406,37 +466,45 @@ scene.add(new T.Points(ashGeo, new T.PointsMaterial({color:0xc8b8a0, size:0.07, 
 const ZTOP = [0x5a4a6a, 0x6a5a3a, 0x3f5d7a, 0x7a4a3a, 0x4a6a5a, 0x274d8f];
 function person(o) {
   const g = new T.Group(), body = new T.Group(); g.add(body);
-  const limb = (x, y, w, h, col) => { const p = new T.Group(); p.position.set(x, y, 0); box(p, w, h, w, col, 0, -h / 2, 0); body.add(p); return p; };
-  const legL = limb(-0.14, 0.9, 0.2, 0.9, o.legs), legR = limb(0.14, 0.9, 0.2, 0.9, o.legs);
-  box(body, 0.52, 0.66, 0.3, o.top, 0, 1.22, 0);
-  if (o.tie) box(body, 0.07, 0.4, 0.02, 0xb3261c, 0, 1.3, -0.16);
-  const armL = limb(-0.34, 1.5, 0.14, 0.62, o.zombie ? o.skin : o.top), armR = limb(0.34, 1.5, 0.14, 0.62, o.zombie ? o.skin : o.top);
-  const head = box(body, 0.34, 0.34, 0.34, o.skin, 0, 1.75, 0);
-  if (o.zombie) { box(body, 0.08, 0.06, 0.02, bas(0x1a0d0d), -0.08, 1.78, -0.18); box(body, 0.08, 0.06, 0.02, bas(0x1a0d0d), 0.08, 1.78, -0.18); box(body, 0.16, 0.04, 0.02, bas(0x1a0d0d), 0, 1.66, -0.18); head.rotation.z = 0.18; }
-  else {
-    box(body, 0.38, 0.16, 0.38, 0xd9261c, 0, 1.96, 0); box(body, 0.4, 0.07, 0.4, 0xece7da, 0, 1.87, 0); box(body, 0.13, 0.13, 0.13, 0xece7da, 0, 2.1, 0);
-    box(body, 0.4, 0.5, 0.18, 0x3a4a6a, 0, 1.24, 0.24); // backpack
-    const stick = new T.Group(); stick.position.set(0, -0.6, 0); box(stick, 0.045, 1.25, 0.045, 0xd9c9a0, 0, -0.5, 0); box(stick, 0.05, 0.1, 0.34, 0xd9c9a0, 0, -1.1, -0.15); stick.rotation.x = -0.75; armR.add(stick);
+  const skin = lam(o.skin), top = lam(o.top), legs = lam(o.legs), shoe = lam(o.zombie ? 0x2a2622 : 0x1c1f26), sleeve = o.zombie ? skin : top;
+  const leg = x => { const hip = new T.Group(); hip.position.set(x, 0.92, 0); cap(hip, 0.105, 0.52, legs, 0, -0.2, 0);
+    const k = new T.Group(); k.position.y = -0.44; cap(k, 0.088, 0.5, legs, 0, -0.2, 0); sph(k, 0.095, 0.07, 0.17, shoe, 0, -0.43, -0.06); hip.add(k); hip.userData.k = k; body.add(hip); return hip; };
+  const arm = x => { const sh = new T.Group(); sh.position.set(x, 1.5, 0); cap(sh, 0.075, 0.38, sleeve, 0, -0.14, 0);
+    const k = new T.Group(); k.position.y = -0.3; cap(k, 0.064, 0.34, sleeve, 0, -0.13, 0); sph(k, 0.065, 0.075, 0.065, skin, 0, -0.32, 0); sh.add(k); sh.userData.k = k; body.add(sh); return sh; };
+  const legL = leg(-0.12), legR = leg(0.12), armL = arm(-0.31), armR = arm(0.31);
+  cyl(body, 0.2, 0.58, top, 0, 1.22, 0, 0.25).scale.z = 0.64;
+  sph(body, 0.3, 0.12, 0.165, top, 0, 1.49, 0); sph(body, 0.21, 0.14, 0.15, legs, 0, 0.94, 0);
+  cyl(body, 0.06, 0.12, skin, 0, 1.6, 0);
+  const head = new T.Group(); head.position.set(0, 1.76, 0); body.add(head); sph(head, 0.15, 0.18, 0.165, skin);
+  if (o.zombie) {
+    const dark = lam(0x140c0c); sph(head, 0.035, 0.03, 0.02, dark, -0.06, 0.03, -0.15); sph(head, 0.035, 0.03, 0.02, dark, 0.06, 0.03, -0.15); sph(head, 0.06, 0.03, 0.02, dark, 0, -0.08, -0.145);
+    sph(head, 0.155, 0.12, 0.17, 0x2a2622, 0, 0.07, 0.02, HEMI); head.rotation.z = 0.22; head.rotation.x = 0.15;
+    if (o.tie) cap(body, 0.03, 0.36, 0xb3261c, 0, 1.3, -0.165);
+  } else {
+    sph(head, 0.165, 0.2, 0.18, 0xd9261c, 0, 0.03, 0.01, HEMI); cyl(head, 0.17, 0.07, 0xece7da, 0, 0.05, 0.01); sph(head, 0.055, 0.055, 0.055, 0xece7da, 0, 0.26, 0.01);
+    rbox(body, 0.38, 0.48, 0.2, 0.08, 0x34425e, 0, 1.25, 0.23); // backpack
+    const stick = new T.Group(); stick.position.set(0, -0.32, 0); cyl(stick, 0.022, 1.3, 0xd9c9a0, 0, -0.55, 0); rbox(stick, 0.05, 0.09, 0.34, 0.03, 0xd9c9a0, 0, -1.2, -0.15); stick.rotation.x = -0.95; armR.userData.k.add(stick);
   }
   g.userData = {body, legL, legR, armL, armR, zombie:!!o.zombie};
   return g;
 }
 function pose(g, phase, o) {
-  const u = g.userData, a = Math.sin(phase);
+  const u = g.userData, a = Math.sin(phase), c = Math.cos(phase), kL = u.legL.userData.k, kR = u.legR.userData.k, eL = u.armL.userData.k, eR = u.armR.userData.k;
   o = o || {};
-  if (o.slide) { u.body.rotation.x = 1.2; u.body.position.set(0, 0.16, -0.7); u.legL.rotation.x = 0.25; u.legR.rotation.x = -0.1; u.armL.rotation.x = -0.6; u.armR.rotation.x = -0.6; return; }
-  u.body.rotation.x = u.zombie ? 0.08 : -0.16; u.body.position.set(0, 0, 0);
-  const amp = u.zombie ? 0.5 : 0.95;
-  u.legL.rotation.x = o.air ? 0.9 : a * amp; u.legR.rotation.x = o.air ? -0.5 : -a * amp;
-  if (u.zombie) { u.armL.rotation.x = 1.5 + a * 0.15; u.armR.rotation.x = 1.4 - a * 0.15; }
-  else { u.armL.rotation.x = -a * 0.9; u.armR.rotation.x = o.swing > 0 ? 1.6 - (0.2 - o.swing) * 8 : a * 0.5 + 0.2; }
+  if (o.slide) { u.body.rotation.x = 1.2; u.body.position.set(0, 0.16, -0.7); u.legL.rotation.x = 0.3; u.legR.rotation.x = -0.1; kL.rotation.x = -0.5; kR.rotation.x = -0.1; u.armL.rotation.x = -0.6; u.armR.rotation.x = -0.6; eL.rotation.x = eR.rotation.x = 0.4; return; }
+  u.body.rotation.x = u.zombie ? 0.1 : -0.18; u.body.position.set(0, u.zombie ? 0 : Math.abs(c) * 0.04, 0);
+  if (o.air) { u.legL.rotation.x = 1.0; kL.rotation.x = -1.3; u.legR.rotation.x = -0.35; kR.rotation.x = -0.7; }
+  else { const amp = u.zombie ? 0.45 : 0.95, bend = u.zombie ? 0.5 : 1.25;
+    u.legL.rotation.x = a * amp; u.legR.rotation.x = -a * amp; kL.rotation.x = -(0.12 + bend * Math.max(0, c)); kR.rotation.x = -(0.12 + bend * Math.max(0, -c)); }
+  if (u.zombie) { u.armL.rotation.x = 1.45 + a * 0.15; u.armR.rotation.x = 1.3 - a * 0.15; eL.rotation.x = 0.15; eR.rotation.x = 0.3; u.body.rotation.z = a * 0.06; }
+  else { u.armL.rotation.x = -a * 0.85 - 0.1; eL.rotation.x = 1.3; u.armR.rotation.x = o.swing > 0 ? 1.2 - (0.2 - o.swing) * 7 : a * 0.45; eR.rotation.x = o.swing > 0 ? 0.3 : 1.05; }
 }
-const player = person({skin:0xe0b48c, top:0xf2a51f, legs:0x3f5d8f}); scene.add(player);
+const player = person({skin:0xd9a47c, top:0xe89a1c, legs:0x34507c}); shadows(player); scene.add(player);
 const blob = new T.Mesh(new T.CircleGeometry(0.45, 16), new T.MeshBasicMaterial({color:0, transparent:true, opacity:0.45, depthWrite:false})); blob.rotation.x = -Math.PI / 2; blob.position.y = 0.04; scene.add(blob);
 const horde = [];
-for (let k = 0; k < 11; k++) {
-  const z = person({zombie:true, skin:k % 3 ? 0x8fbf6a : 0xa5c97a, top:ZTOP[k % 6], legs:0x22252e, tie:k === 4});
-  z.userData.ox = (hh(k * 3.1) - 0.5) * 7.5; z.userData.oz = (k % 4) * 0.9 + hh(k) * 0.6; scene.add(z); horde.push(z);
+for (let k = 0; k < 9; k++) {
+  const z = person({zombie:true, skin:k % 3 ? 0x8a9c74 : 0x9aa884, top:ZTOP[k % 6], legs:0x22252e, tie:k === 4});
+  z.userData.ox = (hh(k * 3.1) - 0.5) * 7.5; z.userData.oz = (k % 4) * 0.9 + hh(k) * 0.6; shadows(z); scene.add(z); horde.push(z);
 }
 
 /* ---------- obstacles and pickups ---------- */
@@ -444,34 +512,51 @@ const tramSign = {};
 function build(type, o) {
   const g = new T.Group();
   switch (type) {
-    case 'cone': for (const dx of [-0.42, 0.42]) { cyl(g, 0.22, 0.66, 0xf2671f, dx, 0.36, 0, 0.04); box(g, 0.5, 0.05, 0.5, 0xf2671f, dx, 0.03, 0); cyl(g, 0.135, 0.1, 0xece7da, dx, 0.42, 0, 0.105); } break;
+    case 'cone': for (const dx of [-0.42, 0.42]) { cyl(g, 0.21, 0.64, 0xf2671f, dx, 0.37, 0, 0.045); sph(g, 0.045, 0.045, 0.045, 0xf2671f, dx, 0.69, 0); rbox(g, 0.5, 0.06, 0.5, 0.05, 0x22252c, dx, 0.03, 0).rotation.x = Math.PI / 2; cyl(g, 0.14, 0.11, 0xf4f1e6, dx, 0.42, 0, 0.105); } break;
     case 'bin': {
-      const b = box(g, 0.62, 0.95, 0.7, 0x2f7a43, 0, 0.33, 0); b.rotation.z = Math.PI / 2; box(g, 0.08, 0.68, 0.76, 0x245f34, 0.5, 0.33, 0);
-      box(g, 0.36, 0.3, 0.3, 0x6b6f78, -0.1, 0.82, 0); box(g, 0.1, 0.12, 0.08, 0x6b6f78, -0.24, 1.02, 0); box(g, 0.1, 0.12, 0.08, 0x6b6f78, 0.04, 1.02, 0);
-      box(g, 0.38, 0.1, 0.04, bas(0x15171c), -0.1, 0.86, 0.15); box(g, 0.07, 0.06, 0.02, bas(0xc8f08a), -0.19, 0.86, 0.175); box(g, 0.07, 0.06, 0.02, bas(0xc8f08a), -0.01, 0.86, 0.175); // raccoon
+      const b = new T.Group(); b.rotation.z = Math.PI / 2; b.position.y = 0.36; g.add(b);
+      rbox(b, 0.66, 0.92, 0.7, 0.12, 0x2f7a43, 0, 0, 0); rbox(b, 0.72, 0.1, 0.76, 0.06, 0x245f34, 0, 0.5, 0); for (const dz of [-0.3, 0.3]) cyl(b, 0.1, 0.06, 0x15171c, -0.3, -0.42, dz).rotation.x = Math.PI / 2;
+      const rc = lam(0x777b84), dk = lam(0x1c1e24); // raccoon on top
+      sph(g, 0.2, 0.17, 0.27, rc, -0.1, 0.84, -0.05); sph(g, 0.14, 0.13, 0.14, rc, -0.1, 0.98, 0.2); sph(g, 0.145, 0.05, 0.1, dk, -0.1, 1.0, 0.26); sph(g, 0.04, 0.035, 0.05, dk, -0.1, 0.95, 0.34);
+      for (const dx of [-0.2, 0]) { cyl(g, 0.045, 0.1, rc, dx, 1.11, 0.18, 0.005); sph(g, 0.022, 0.022, 0.015, bas(0xc8f08a), dx + 0.05, 1.0, 0.335); }
+      for (let k = 0; k < 4; k++) sph(g, 0.07, 0.07, 0.08, k % 2 ? dk : rc, -0.1 + k * 0.03, 0.86 + k * 0.05, -0.34 - k * 0.1);
       break; }
-    case 'barrier': { box(g, 2.0, 0.7, 0.45, 0x8a8d94, 0, 0.35, 0); box(g, 1.7, 0.2, 0.3, 0x9a9da4, 0, 0.78, 0); const p = new T.Mesh(PLANE, hazardMat); p.scale.set(2.0, 0.26, 1); p.position.set(0, 0.5, 0.235); g.add(p); break; }
+    case 'barrier': {
+      const geo = profile('jersey', [[-0.3, 0], [-0.3, 0.1], [-0.15, 0.32], [-0.09, 0.85], [0.09, 0.85], [0.15, 0.32], [0.3, 0.1], [0.3, 0], [-0.3, 0]], 2.0, 0.02); const m = new T.Mesh(geo, lam(0x9a9da4)); m.rotation.y = Math.PI / 2; g.add(m);
+      const p = new T.Mesh(PLANE, hazardMat); p.scale.set(1.9, 0.24, 1); p.position.set(0, 0.6, 0.135); p.rotation.x = -0.1; g.add(p); break; }
     case 'pit': {
-      const h = new T.Mesh(new T.CircleGeometry(1, 20), bas(0x030405)); h.rotation.x = -Math.PI / 2; h.scale.set(0.95, 1.2, 1); h.position.y = 0.03; g.add(h);
-      const r = new T.Mesh(new T.RingGeometry(1, 1.14, 24), bas(0xd9261c)); r.rotation.x = -Math.PI / 2; r.scale.set(0.95, 1.2, 1); r.position.y = 0.025; g.add(r);
-      for (const dx of [-0.95, 0.95]) cyl(g, 0.14, 0.4, 0xf2671f, dx, 0.2, 1.25, 0.03); break; }
+      const h = new T.Mesh(new T.CircleGeometry(1, 24), bas(0x030405)); h.rotation.x = -Math.PI / 2; h.scale.set(0.95, 1.2, 1); h.position.y = 0.03; g.add(h);
+      const r = new T.Mesh(new T.RingGeometry(1, 1.14, 28), bas(0xd9261c)); r.rotation.x = -Math.PI / 2; r.scale.set(0.95, 1.2, 1); r.position.y = 0.025; g.add(r);
+      for (let k = 0; k < 9; k++) { const a = k * 0.7 + 0.3; sph(g, 0.14 + hh(k) * 0.1, 0.06, 0.12 + hh(k * 3) * 0.1, 0x1b1f29, Math.cos(a) * 1.02, 0.03, Math.sin(a) * 1.3); }
+      for (const dx of [-0.95, 0.95]) cyl(g, 0.14, 0.4, 0xf2671f, dx, 0.2, 1.3, 0.03); break; }
     case 'car': {
-      box(g, 1.8, 0.68, 4.2, o.col, 0, 0.66, 0); box(g, 1.6, 0.56, 2.2, 0x10141c, 0, 1.24, 0.2); box(g, 1.64, 0.08, 2.24, o.col, 0, 1.54, 0.2);
-      for (const dx of [-0.86, 0.86]) for (const dz of [-1.4, 1.4]) box(g, 0.22, 0.6, 0.6, 0x0b0d12, dx, 0.3, dz);
-      for (const dx of [-0.7, 0.7]) box(g, 0.3, 0.14, 0.04, blinkMat, dx, 0.72, 2.11);
+      const paint = gloss(o.col);
+      g.add(new T.Mesh(profile('carBody', [[-2.0, 0.28], [-2.12, 0.3, -2.1, 0.6], [-2.08, 0.86, -1.7, 0.92], [-0.9, 1.0], [1.55, 1.0], [1.95, 0.96], [2.12, 0.9, 2.1, 0.58], [2.1, 0.3, 2.0, 0.28], [-2.0, 0.28]], 1.5, 0.15), paint));
+      g.add(new T.Mesh(profile('carCabin', [[-0.95, 0.98], [-0.6, 1.44, -0.2, 1.47], [0.75, 1.47], [1.25, 1.44, 1.5, 0.98], [-0.95, 0.98]], 1.28, 0.1), glass));
+      rbox(g, 1.34, 0.06, 1.05, 0.05, paint, 0, 1.5, -0.27).rotation.x = Math.PI / 2;
+      for (const dx of [-0.84, 0.84]) for (const dz of [-1.35, 1.35]) { const w = cyl(g, 0.33, 0.24, 0x0d0f13, dx, 0.33, dz); w.rotation.z = Math.PI / 2; cyl(g, 0.17, 0.26, 0x8a8f9a, dx, 0.33, dz).rotation.z = Math.PI / 2; }
+      for (const dx of [-0.62, 0.62]) { sph(g, 0.17, 0.08, 0.05, bas(0xd8d2c0), dx, 0.72, 2.1); sph(g, 0.07, 0.05, 0.04, blinkMat, dx * 1.32, 0.7, 2.06); }
+      rbox(g, 1.7, 0.16, 0.12, 0.06, 0x1a1c22, 0, 0.36, 2.1);
       g.rotation.y = (o.skew || 0); break; }
     case 'tram': {
-      box(g, 2.4, 2.5, 15, 0xb3221a, 0, 1.75, 0); box(g, 2.44, 0.26, 15.02, 0xe4dfd2, 0, 1.45, 0); box(g, 2.46, 0.8, 14.2, 0x10141c, 0, 2.3, 0); box(g, 2.3, 0.5, 14.6, 0x16181f, 0, 0.3, 0);
+      const red = gloss(0xb3221a);
+      rbox(g, 2.4, 2.7, 15, 0.5, red, 0, 1.85, 0); box(g, 2.2, 0.5, 13.8, 0x14161c, 0, 0.3, 0);
+      for (const s of [-1, 1]) { box(g, 0.03, 0.26, 13.6, gloss(0xe4dfd2), s * 1.2, 1.42, 0); box(g, 0.03, 0.8, 13.4, glass, s * 1.205, 2.3, 0); for (let k = -3; k <= 3; k++) box(g, 0.04, 0.82, 0.14, red, s * 1.21, 2.3, k * 2.1); }
+      for (const dz of [-5.2, -2.4, 2.4, 5.2]) for (const s of [-1, 1]) cyl(g, 0.3, 0.14, 0x0d0f13, s * 1.0, 0.3, dz).rotation.z = Math.PI / 2;
       const k = o.label, m = tramSign[k] || (tramSign[k] = new T.MeshBasicMaterial({map:canvasTex(256, 48, (c) => { c.fillStyle = '#0b0b0b'; c.fillRect(0, 0, 256, 48); c.fillStyle = '#ffb347'; c.font = '600 30px ' + DISP; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(k, 128, 26, 240); })}));
-      const s = new T.Mesh(PLANE, m); s.scale.set(1.9, 0.36, 1); s.position.set(0, 2.82, 7.52); g.add(s);
-      box(g, 2.0, 0.9, 0.04, 0x10141c, 0, 2.1, 7.51); for (const dx of [-0.8, 0.8]) box(g, 0.3, 0.16, 0.04, bas(0x8a6a3a), dx, 1.1, 7.52);
-      box(g, 0.06, 2.7, 0.06, 0x12151c, 0, 4.3, 1).rotation.x = 0.2; break; }
+      const s = new T.Mesh(PLANE, m); s.scale.set(1.7, 0.32, 1); s.position.set(0, 2.9, 7.52); g.add(s);
+      rbox(g, 2.0, 1.0, 0.1, 0.08, glass, 0, 2.15, 7.47); box(g, 2.3, 0.22, 0.06, gloss(0xe4dfd2), 0, 1.42, 7.49);
+      for (const dx of [-0.8, 0.8]) { sph(g, 0.13, 0.13, 0.05, bas(0xffe2b0), dx, 1.05, 7.5); glow(g, 0xffc880, 1.6, dx, 1.05, 7.6, 0.5); }
+      rbox(g, 1.5, 0.3, 4, 0.2, 0x8a8f9a, 0, 3.3, -1); const pa = cyl(g, 0.03, 2.5, 0x12151c, 0, 4.4, 1.2); pa.rotation.x = 0.35; cyl(g, 0.03, 1.4, 0x12151c, 0, 5.55, 1.62).rotation.z = Math.PI / 2; break; }
     case 'scaffold': {
-      box(g, 10.4, 0.3, 1.5, 0x8a6a3a, 0, 1.36, 0); const p = new T.Mesh(PLANE, hazardWide); p.scale.set(10.4, 0.34, 1); p.position.set(0, 1.22, 0.76); g.add(p);
-      for (const dx of [-4.9, 4.9]) for (const dz of [-0.6, 0.6]) box(g, 0.1, 4.4, 0.1, 0x5a6070, dx, 2.2, dz);
-      box(g, 10, 0.1, 0.1, 0x5a6070, 0, 4.4, 0.6); box(g, 10, 0.1, 0.1, 0x5a6070, 0, 2.9, 0.6); box(g, 10.4, 0.2, 1.5, 0x6d5530, 0, 3.0, 0);
-      const br = box(g, 0.08, 10.4, 0.08, 0x5a6070, 0, 3.65, 0.6); br.rotation.z = 1.43; break; }
-    case 'zombie': { const z = person({zombie:true, skin:o.fast ? 0xb7d46a : 0x8fbf6a, top:o.top, legs:0x2b2f3a, tie:o.tie}); z.rotation.y = Math.PI; g.add(z); g.userData.z = z; break; }
+      const pipe = gloss(0x8d95a3);
+      for (const dz of [-0.48, 0, 0.48]) box(g, 10.4, 0.07, 0.44, 0x9a7a48, 0, 1.44, dz); const p = new T.Mesh(PLANE, hazardWide); p.scale.set(10.4, 0.34, 1); p.position.set(0, 1.24, 0.76); g.add(p); box(g, 10.4, 0.36, 0.06, 0x6d5530, 0, 1.24, 0.72);
+      for (const dx of [-4.9, 4.9]) for (const dz of [-0.6, 0.6]) { cyl(g, 0.045, 4.5, pipe, dx, 2.25, dz); cyl(g, 0.1, 0.06, pipe, dx, 0.03, dz); }
+      for (const y of [1.36, 2.9, 4.4]) for (const dz of [-0.6, 0.6]) cyl(g, 0.04, 10, pipe, 0, y, dz).rotation.z = Math.PI / 2;
+      for (const dx of [-4.9, 4.9]) for (const y of [1.36, 2.9, 4.4]) cyl(g, 0.04, 1.2, pipe, dx, y, 0).rotation.x = Math.PI / 2;
+      for (const dz of [-0.48, 0, 0.48]) box(g, 10.4, 0.07, 0.44, 0x8a6a3a, 0, 3.0, dz);
+      const br = cyl(g, 0.035, 10.3, pipe, 0, 3.65, 0.6); br.rotation.z = 1.42; const b2 = cyl(g, 0.035, 10.3, pipe, 0, 3.65, -0.6); b2.rotation.z = -1.42; break; }
+    case 'zombie': { const z = person({zombie:true, skin:o.fast ? 0xa9b878 : 0x8a9c74, top:o.top, legs:0x2b2f3a, tie:o.tie}); z.rotation.y = Math.PI; g.add(z); g.userData.z = z; break; }
     case 'token': { const c = cyl(g, 0.26, 0.06, bas(0xe8b93a), 0, 0, 0); c.rotation.x = Math.PI / 2; const i = cyl(g, 0.12, 0.07, bas(0x9a7418), 0, 0, 0); i.rotation.x = Math.PI / 2; break; }
     case 'puck': cyl(g, 0.3, 0.16, 0x0b0d12, 0, 0, 0); cyl(g, 0.3, 0.02, 0x4a505c, 0, 0.09, 0); glow(g, 0xffb347, 2.2, 0, 0, 0, 0.6); break;
     case 'coffee': cyl(g, 0.17, 0.5, 0xb3221a, 0, 0, 0, 0.23); cyl(g, 0.25, 0.07, 0xece7da, 0, 0.28, 0); cyl(g, 0.21, 0.14, 0xece7da, 0, 0, 0, 0.215); glow(g, 0xffb347, 2.6, 0, 0, 0, 0.7); break;
@@ -485,7 +570,7 @@ const DIM = { cone:{hw:0.62, len:0.6, y0:0, y1:0.6, hint:'Jump'}, bin:{hw:0.55, 
 function add(type, lane, z, o) {
   o = o || {}; const d = DIM[type], x = type === 'scaffold' ? 0 : LANES[lane], y = o.y || 0;
   const e = Object.assign({type, x, z, y, hw:d.hw, len:d.len, y0:d.y0 + y, y1:d.y1 + y, hint:d.hint, hit:false, dead:0, vs:0, ph:rnd(0, 6)}, o);
-  e.mesh = build(type, o); e.mesh.position.set(x, y, z); scene.add(e.mesh); ents.push(e); return e;
+  e.mesh = build(type, o); e.mesh.position.set(x, y, z); if (type !== 'token') shadows(e.mesh); scene.add(e.mesh); ents.push(e); return e;
 }
 function drop(e) { scene.remove(e.mesh); }
 function tokens(lane, z, n, arc) { for (let k = 0; k < n; k++) { const u = n > 1 ? k / (n - 1) : 0; add('token', lane, z - k * 1.6, {y: arc ? 0.9 + Math.sin(u * Math.PI) * 1.2 : 0.75}); } }
@@ -575,7 +660,9 @@ function togglePause() {
 function scroll(dz) {
   roadTex.offset.y += dz / 16;
   for (const b of buildings) { b.g.position.z += dz; if (b.g.position.z > 18) { b.g.position.z -= NB * SLOT; b.serial += NB * 2; skin(b); } }
-  for (const l of lights) { l.g.position.z += dz; if (l.g.position.z > 14) { l.g.position.z -= 12 * 18; l.serial += 12; const on = hh(l.serial * 7.1) < 0.8; l.gl.visible = l.pool.visible = on; l.lamp.material = bas(on ? 0xffd08a : 0x3a3a3a); } }
+  for (const l of lights) { l.g.position.z += dz; if (l.g.position.z > 14) { l.g.position.z -= 12 * 18; l.serial += 12; const on = l.on = hh(l.serial * 7.1) < 0.8; l.gl.visible = l.pool.visible = on; l.lamp.material = bas(on ? 0xffd08a : 0x3a3a3a); } }
+  let n = 0; for (const l of lights.slice().sort((a, b) => b.g.position.z - a.g.position.z)) { const z = l.g.position.z; if (n < 4 && lampsOn && l.on && z < 8 && z > -66) { lamps[n].position.set(l.side * 3.85, 6, z); lamps[n].intensity = 1.7 * clamp((z + 66) / 14, 0, 1); n++; } }
+  for (; n < 4; n++) lamps[n].intensity = 0;
   for (const s of signs) { s.g.position.z += dz; if (s.g.position.z > 12) { s.g.position.z -= 180; s.serial += 4; const d = DISTRICTS[dIndex(S.dist - s.g.position.z)]; s.pl.material = signMat(d, d.streets[s.serial % 3]); } }
   for (const g of lanterns) { g.position.z += dz; if (g.position.z > 12) g.position.z -= 180; g.visible = dIndex(S.dist - g.position.z) === 4; }
   for (let i = 0; i < 160; i++) { let z = ashPos[i * 3 + 2] + dz * 0.8; if (z > 8) z -= 68; ashPos[i * 3 + 2] = z; ashPos[i * 3 + 1] -= 0.004; if (ashPos[i * 3 + 1] < 0) ashPos[i * 3 + 1] = 9; }
@@ -688,8 +775,11 @@ function render() {
 
 /* ---------- loop + input ---------- */
 let last = performance.now();
+const q = {t:0, n:0, level:0};
 function frame(ts) {
-  const dt = Math.min(0.033, Math.max(0, (ts - last) / 1000)); last = ts;
+  const raw = Math.max(0, (ts - last) / 1000), dt = Math.min(0.033, raw); last = ts;
+  // step the detail down if this device cannot hold a smooth frame rate
+  if (S.mode === 'play' && raw < 0.5) { q.t += raw; q.n++; if (q.n >= 90) { if (q.t / q.n > 1 / 30 && q.level < 2) { q.level++; if (q.level === 1) { moonLight.castShadow = false; pxCap = 1; resize(); } else lampsOn = false; } q.t = 0; q.n = 0; } }
   update(dt); render(); requestAnimationFrame(frame);
 }
 function begin() { initAudio(); reset(); hudCache.hint = null; $('hHint').hidden = true; }
