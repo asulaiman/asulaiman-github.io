@@ -132,7 +132,7 @@ button:focus-visible{outline:3px solid var(--sodium);outline-offset:2px}
       <p id="intro">The city has fallen and the horde is right behind you. Run the streetcar tracks from Union Station to Kensington Market. Every stumble lets them close in.</p>
       <dl class="keys">
         <dt>Switch lanes</dt><dd>Left and Right, or A and D. Swipe sideways on a phone.</dd>
-        <dt>Jump</dt><dd>Space or Up. Press again in the air to clear a car.</dd>
+        <dt>Jump</dt><dd>Space or Up. Press again in the air for extra height.</dd>
         <dt>Slide</dt><dd>Down or S, to get under scaffolding.</dd>
         <dt>Shoot</dt><dd>F or X. Slapshots a puck down your lane. Tap on a phone.</dd>
         <dt>Pick up</dt><dd>Pucks for ammo, coffee to pull away, tokens for points.</dd>
@@ -668,8 +668,8 @@ function build(type, o) {
   }
   return g;
 }
-const DIM = { cone:{hw:0.62, len:0.6, y0:0, y1:0.6, hint:'Jump'}, bin:{hw:0.55, len:0.8, y0:0, y1:0.8, hint:'Jump'}, barrier:{hw:1.0, len:0.5, y0:0, y1:0.85, hint:'Jump'},
-  pit:{hw:0.85, len:2.2, y0:-1, y1:0.06, hint:'Jump'}, car:{hw:0.9, len:4.2, y0:0, y1:1.3, hint:'Double jump or dodge'}, tram:{hw:1.2, len:15, y0:0, y1:3.4, hint:'Switch lanes'},
+const DIM = { cone:{hw:0.62, len:0.5, y0:0, y1:0.48, hint:'Jump'}, bin:{hw:0.55, len:0.7, y0:0, y1:0.62, hint:'Jump'}, barrier:{hw:1.0, len:0.4, y0:0, y1:0.68, hint:'Jump'},
+  pit:{hw:0.8, len:1.8, y0:-1, y1:0.06, hint:'Jump'}, car:{hw:0.9, len:4.0, y0:0, y1:1.1, hint:'Jump or dodge'}, tram:{hw:1.2, len:15, y0:0, y1:3.4, hint:'Switch lanes'},
   scaffold:{hw:5.2, len:1.5, y0:1.1, y1:4.5, hint:'Slide'}, zombie:{hw:0.32, len:0.6, y0:0, y1:1.8, hint:'Shoot or dodge'},
   token:{hw:0.55, len:0.8, y0:-0.5, y1:0.5}, puck:{hw:0.6, len:1, y0:-0.9, y1:0.9}, coffee:{hw:0.6, len:1, y0:-0.9, y1:0.9} };
 function add(type, lane, z, o) {
@@ -741,9 +741,10 @@ function endGame() {
 function move(dir) { if (S.mode !== 'play') return; const l = clamp(P.lane + dir, 0, 2); if (l !== P.lane) { P.lane = l; tone(300, 0.06, 'triangle', 0.03, 380); } }
 function jump(down) {
   if (S.mode !== 'play') return;
-  if (!down) { if (P.vy > 4) P.vy = 4; return; }
-  if (P.ground) { P.vy = 9; P.ground = false; P.jumps = 1; P.slide = 0; tone(420, 0.12, 'square', 0.04, 720); }
+  if (!down) return; // a quick tap gets the full jump
+  if (P.ground) { P.vy = 9.4; P.ground = false; P.jumps = 1; P.slide = 0; tone(420, 0.12, 'square', 0.04, 720); }
   else if (P.jumps < 2) { P.vy = 8; P.jumps = 2; tone(560, 0.12, 'square', 0.04, 900); puff(P.x, P.y, 0, 0xece7da, 5, 1.5); }
+  else P.jumpQ = S.t; // pressed just before landing: jump again on touchdown
 }
 function slide(down) {
   P.slideHold = down; if (S.mode !== 'play' || !down) return;
@@ -795,8 +796,8 @@ function update(dt) {
   P.inv -= dt; P.swing -= dt; P.phase += dt * v * 1.15;
   const tx = LANES[P.lane], step = 15 * dt; P.x += clamp(tx - P.x, -step, step);
   if (!P.ground) {
-    P.vy -= 24 * dt; P.y += P.vy * dt;
-    if (P.y <= 0) { P.y = 0; P.vy = 0; P.ground = true; P.jumps = 0; if (P.slideQ && P.slideHold) { P.slide = 0.62; P.slideDur = 0; } P.slideQ = false; }
+    P.vy -= 19 * dt; P.y += P.vy * dt;
+    if (P.y <= 0) { P.y = 0; P.vy = 0; P.ground = true; P.jumps = 0; if (S.t - (P.jumpQ || -9) < 0.18) { P.jumpQ = -9; jump(true); } else if (P.slideQ && P.slideHold) { P.slide = 0.62; P.slideDur = 0; } P.slideQ = false; }
   }
   if (P.slide > 0) { P.slide -= dt; P.slideDur += dt; if (P.slide <= 0.08 && P.slideHold && P.slideDur < 1.25) P.slide = 0.08; }
 
@@ -813,9 +814,9 @@ function update(dt) {
     else if (e.type === 'puck' || e.type === 'coffee') { e.mesh.position.y = e.y + Math.sin(S.t * 4 + e.ph) * 0.12; e.mesh.rotation.y += dt * 2; }
     e.z += dz; e.mesh.position.z = e.z;
     if (e.hit) continue;
-    const half = e.len / 2 + 0.3 + dz;
+    const pad = e.hint ? 0.12 : 0.4, half = e.len / 2 + pad + dz;
     if (e.hint && e.z > hintZ && e.z < -3 && (e.type === 'scaffold' || Math.abs(e.x - LANES[P.lane]) < e.hw + 0.3)) { hintZ = e.z; hint = e.type === 'zombie' && S.pucks <= 0 ? 'Dodge' : e.hint; }
-    if (e.z < -half || e.z > half || Math.abs(P.x - e.x) > e.hw + 0.3 || P.y >= e.y1 || P.y + ph <= e.y0) continue;
+    if (e.z < -half || e.z > half || Math.abs(P.x - e.x) > e.hw + (e.hint ? 0.18 : 0.4) || P.y >= e.y1 || P.y + ph <= e.y0) continue;
     if (e.type === 'token') { e.hit = e.gone = true; S.tokens++; tone(1200, 0.07, 'square', 0.03, 1700); }
     else if (e.type === 'puck') { e.hit = e.gone = true; S.pucks = Math.min(9, S.pucks + 2); tone(700, 0.1, 'square', 0.04, 1000); }
     else if (e.type === 'coffee') { e.hit = e.gone = true; S.gap = Math.min(100, S.gap + 30); P.inv = Math.max(P.inv, 0.4); tone(520, 0.25, 'triangle', 0.06, 1040); puff(P.x, 1, 0, 0xffb347, 10, 2.5); }
