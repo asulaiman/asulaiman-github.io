@@ -75,10 +75,10 @@ canvas{display:block;width:100%;height:100%;touch-action:none;background:var(--n
 }
 .card{max-width:540px;width:100%;padding:20px 4px;display:flex;flex-direction:column;gap:16px;align-items:flex-start}
 .blade{
-  display:inline-flex;flex-direction:column;background:var(--bone);color:#11161f;
+  display:inline-flex;flex-direction:column;background:#0a4a9c;color:#fff;border:2px solid #fff;
   border-radius:4px;overflow:hidden;font-family:var(--display);box-shadow:0 4px 0 #0006;text-transform:uppercase;
 }
-.blade small{background:#1c4f9c;color:#fff;font-size:13px;font-weight:600;letter-spacing:.16em;padding:3px 12px;white-space:nowrap}
+.blade small{background:#073672;color:#fff;font-size:13px;font-weight:600;letter-spacing:.16em;padding:3px 12px;white-space:nowrap}
 .blade h1{margin:0;font-size:clamp(40px,11vw,72px);font-weight:800;line-height:.95;padding:6px 14px 10px;letter-spacing:.01em}
 .blade.mini small{font-size:10px;padding:2px 10px;text-align:center}
 .blade.mini strong{font-size:22px;font-weight:800;line-height:1;padding:3px 12px 5px;text-align:center;white-space:nowrap}
@@ -219,7 +219,8 @@ catch (e) {
 const scene = new T.Scene();
 const camera = new T.PerspectiveCamera(62, 16 / 9, 0.1, 1200);
 scene.fog = new T.FogExp2(0x3e2c3c, 0.0135);
-scene.add(new T.HemisphereLight(0x8fa0c8, 0x2a2420, 0.16));
+const hemi = new T.HemisphereLight(0x8fa0c8, 0x2a2420, 0.16); scene.add(hemi);
+const storm = {next:9, t:-9};
 const moonLight = new T.DirectionalLight(0xcfd8ff, 0.4); moonLight.position.set(-9, 20, 8); moonLight.target.position.set(0, 0, -12); scene.add(moonLight, moonLight.target);
 const COARSE = matchMedia('(pointer:coarse)').matches;
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = T.PCFSoftShadowMap;
@@ -292,6 +293,11 @@ function cap(parent, r, h, mat, x, y, z) { // vertical capsule, h tip to tip
   cyl(g, r, c, mat); sph(g, r, r, r, mat, 0, c / 2, 0); sph(g, r, r, r, mat, 0, -c / 2, 0); parent.add(g); return g;
 }
 const geoCache = {};
+const UP = new T.Vector3(0, 1, 0);
+function rod(parent, r, a, b, mat) { // cylinder between two points
+  const m = new T.Mesh(CYL, M(mat)), d = new T.Vector3(b[0] - a[0], b[1] - a[1], b[2] - a[2]), l = d.length();
+  m.scale.set(r, l, r); m.position.set((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2); m.quaternion.setFromUnitVectors(UP, d.normalize()); parent.add(m); return m;
+}
 function rbox(parent, w, h, d, r, mat, x, y, z) { // box with rounded edges
   const k = [w, h, d, r].join(); let geo = geoCache[k];
   if (!geo) {
@@ -336,9 +342,9 @@ const hazardMat = hazard(1), hazardWide = hazard(5), blinkMat = new T.MeshBasicM
 
 /* ---------- sky, moon, tower, skyline ---------- */
 const skyMat = new T.ShaderMaterial({side:T.BackSide, fog:false, depthWrite:false,
-  uniforms:{uHorizon:{value:new T.Color()}, uTime:{value:0}, uMoon:{value:new T.Vector3(0.22, 0.34, -0.91).normalize()}},
+  uniforms:{uHorizon:{value:new T.Color()}, uFlash:{value:0}, uTime:{value:0}, uMoon:{value:new T.Vector3(0.22, 0.34, -0.91).normalize()}},
   vertexShader:'varying vec3 vDir; void main(){ vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-  fragmentShader:`uniform vec3 uHorizon; uniform float uTime; uniform vec3 uMoon; varying vec3 vDir;
+  fragmentShader:`uniform vec3 uHorizon; uniform float uTime, uFlash; uniform vec3 uMoon; varying vec3 vDir;
     float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
     float noise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y); }
@@ -352,6 +358,7 @@ const skyMat = new T.ShaderMaterial({side:T.BackSide, fog:false, depthWrite:fals
       col += vec3(step(0.9972, hash(floor(d.xz / (h + 0.3) * 240.0)))) * smoothstep(0.08, 0.4, h) * (1.0 - cl) * 0.9;
       vec3 cloud = mix(uHorizon * 1.9, vec3(0.03, 0.035, 0.05) + moon * pow(md, 5.0) * 0.3, smoothstep(0.0, 0.45, h));
       col = mix(col, cloud, cl * 0.8 * smoothstep(0.015, 0.16, h));
+      col += (cl * 0.9 + 0.12) * uFlash * vec3(0.5, 0.56, 0.78) * smoothstep(0.0, 0.25, h + 0.05);
       gl_FragColor = vec4(col, 1.0);
       #include <tonemapping_fragment>
       #include <encodings_fragment>
@@ -368,29 +375,47 @@ scene.add(new T.Mesh(new T.SphereGeometry(1000, 32, 20), skyMat));
   scene.environment = pm.fromScene(es, 0.035).texture; pm.dispose();
 })();
 const far = new T.Group(); scene.add(far);
-(() => {
-  const sil = bas(0x0a0e17, true), lit = emit(0xffc878, 2.5, true);
-  // the tower, straight down the street
-  const tw = new T.Group(); tw.position.set(-70, 0, -760); far.add(tw);
-  const shaft = new T.Mesh(new T.CylinderGeometry(4.5, 16, 330, 10), sil); shaft.position.y = 165; tw.add(shaft);
-  const pod = new T.Mesh(new T.CylinderGeometry(19, 13, 16, 18), sil); pod.position.y = 340; tw.add(pod);
-  const ring = new T.Mesh(new T.CylinderGeometry(19.3, 19.3, 2, 18), lit); ring.position.y = 343; tw.add(ring);
-  const pod2 = new T.Mesh(new T.CylinderGeometry(9, 15, 14, 14), sil); pod2.position.y = 355; tw.add(pod2);
-  const up = new T.Mesh(new T.CylinderGeometry(2, 5, 90, 8), sil); up.position.y = 405; tw.add(up);
-  const ant = new T.Mesh(new T.CylinderGeometry(0.5, 1.6, 100, 6), sil); ant.position.y = 500; tw.add(ant);
-  far.userData.beacon = new T.Mesh(new T.SphereGeometry(3, 8, 8), emit(0xff3b2f, 6, true)); far.userData.beacon.position.set(-70, 552, -760); far.add(far.userData.beacon);
-  // stadium dome beside it
-  const dome = new T.Mesh(new T.SphereGeometry(70, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2), sil); dome.scale.y = 0.55; dome.position.set(-190, 0, -740); far.add(dome);
-  // distant towers
-  for (let i = 0; i < 46; i++) {
-    const x = -640 + i * 28 + hh(i) * 12; if (Math.abs(x + 70) < 34) continue;
-    const h = 60 + hh(i * 2.7) * 190, w = 18 + hh(i + 9) * 16;
-    const b = new T.Mesh(BOX, sil); b.scale.set(w, h, w); b.position.set(x, h / 2, -700 - hh(i * 4.1) * 60); far.add(b);
-    if (hh(i * 6.3) > 0.45) { const l = new T.Mesh(BOX, lit); l.scale.set(1.5, 1.5, 1); l.position.set(x + (hh(i * 3) - 0.5) * w * 0.7, h * hh(i * 8.2), b.position.z + w / 2 + 1); far.add(l); }
-  }
+(() => { // the downtown skyline as seen looking toward the lake: dome, tower, then the bank towers
+  const cache = {};
+  const skinM2 = (wall, lit, cols, rows, p) => { const k = [wall, lit, cols, rows, p].join(); return cache[k] || (cache[k] = new T.MeshBasicMaterial({fog:false, color:new T.Color(1.15, 1.15, 1.2), map:canvasTex(128, 256, (g, w, h) => {
+    g.fillStyle = wall; g.fillRect(0, 0, w, h); const cw = w / cols, ch = h / rows;
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) if (Math.random() < p) { g.globalAlpha = 0.35 + Math.random() * 0.65; g.fillStyle = lit; g.fillRect(c * cw + 1, r * ch + 1, cw - 2, ch - 2); }
+    g.globalAlpha = 1; g.fillStyle = 'rgba(255,255,255,.05)'; for (let r = 0; r < rows; r++) g.fillRect(0, r * ch, w, 1); })})); };
+  const BLACK = skinM2('#05070b', '#ffd9a0', 10, 44, 0.16), WHITE = skinM2('#3a3e46', '#fff0cc', 9, 50, 0.14), RED = skinM2('#2c1412', '#ffc890', 8, 46, 0.14), GOLD = skinM2('#3a2a0a', '#ffcf60', 9, 34, 0.4),
+    SILVER = skinM2('#232a33', '#e8f0ff', 9, 42, 0.14), TEAL = skinM2('#0a2026', '#bfeee8', 8, 44, 0.2), GREY = skinM2('#14171d', '#ffd9a0', 8, 30, 0.12), dark = bas(0x0b0e15, true), conc = bas(0x1c1f27, true);
+  const tw = (x, z, w, d, h, m, y0) => { const b = new T.Mesh(BOX, m); b.scale.set(w, h, d); b.position.set(x, (y0 || 0) + h / 2, z); far.add(b); return b; };
+  const cy = (x, y, z, rb, rt, h, m, seg) => { const c = new T.Mesh(new T.CylinderGeometry(rt, rb, h, seg || 16), m); c.position.set(x, y, z); far.add(c); return c; };
+  // CN Tower
+  const X = -70, Z = -760;
+  cy(X, 168, Z, 17, 5, 336, conc, 6); for (let k = 0; k < 3; k++) { const a = k * 2.094 + 0.5; tw(X + Math.cos(a) * 9, Z + Math.sin(a) * 9, 5, 5, 300, conc).rotation.y = -a; }
+  cy(X, 338, Z, 15, 21, 14, bas(0xb9bec8, true), 24); cy(X, 349, Z, 21.5, 21.5, 5, emit(0xffd9a0, 2.2, true), 24); cy(X, 356, Z, 21, 16, 9, dark, 24); cy(X, 362, Z, 16.2, 16.2, 2.5, emit(0xd9261c, 3, true), 24); cy(X, 368, Z, 12, 7, 10, conc, 16);
+  cy(X, 410, Z, 5, 3.4, 76, conc, 8); cy(X, 450, Z, 5.5, 5.5, 5, emit(0xffd9a0, 1.6, true), 12); cy(X, 503, Z, 2.6, 0.6, 100, dark, 6);
+  for (let k = 0; k < 3; k++) { const a = k * 2.094 + 1.55; tw(X + Math.cos(a) * 8.5, Z + Math.sin(a) * 8.5, 0.9, 0.9, 300, emit(0xd9261c, 1.6, true), 20); }
+  far.userData.beacon = new T.Mesh(new T.SphereGeometry(3, 8, 8), emit(0xff3b2f, 6, true)); far.userData.beacon.position.set(X, 554, Z); far.add(far.userData.beacon);
+  // the dome and its hotel
+  const dome = new T.Mesh(new T.SphereGeometry(74, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2), bas(0x363b46, true)); dome.scale.y = 0.5; dome.position.set(-195, 26, -735); far.add(dome);
+  cy(-195, 13, -735, 76, 76, 26, GREY, 32); tw(-128, -722, 40, 30, 48, GREY);
+  // condos by the tower, with their rounded caps
+  for (const [x, h] of [[-128, 234], [-106, 202]]) { cy(x, h / 2, -790, 13, 13, h, TEAL, 20); const c = new T.Mesh(new T.SphereGeometry(13, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), dark); c.scale.y = 0.7; c.position.set(x, h, -790); far.add(c); }
+  // the curved condo tower
+  const ls = new T.Shape(); ls.moveTo(0, 0); ls.lineTo(26, 0); ls.lineTo(26, 120); ls.quadraticCurveTo(25, 190, 6, 205); ls.lineTo(0, 205); ls.lineTo(0, 0);
+  const lt = new T.Mesh(new T.ExtrudeGeometry(ls, {depth:22, bevelEnabled:false}), bas(0x12222c, true)); lt.position.set(-34, 0, -770); far.add(lt);
+  for (let k = 0; k < 40; k++) tw(-32 + hh(k) * 20, -747.5, 1.6, 0.5, 1.6, emit(0xbfeee8, 1.4, true), 12 + hh(k * 3.1) * 150);
+  // the financial district
+  tw(22, -740, 30, 30, 180, GOLD); tw(50, -752, 26, 26, 130, GOLD);                               // gold glass pair
+  tw(84, -746, 36, 26, 223, BLACK); tw(118, -760, 30, 24, 183, BLACK); tw(104, -724, 28, 22, 155, BLACK);   // black slab towers
+  tw(150, -748, 34, 30, 239, SILVER);
+  tw(190, -752, 40, 40, 298, WHITE); cy(190, 327, -752, 1.6, 0.5, 58, dark, 6); tw(190, -752, 14, 14, 10, dark, 298);   // tallest, white marble
+  tw(234, -756, 36, 36, 250, RED); tw(228, -756, 22, 36, 14, RED, 250); tw(222, -756, 10, 36, 12, RED, 264);              // red granite with the notched crown
+  for (const [x, h, w] of [[272, 261, 34], [304, 208, 30]]) { tw(x, -744, w, w, h - 36, SILVER); tw(x, -744, w * 0.78, w * 0.78, 14, SILVER, h - 36); tw(x, -744, w * 0.56, w * 0.56, 12, SILVER, h - 22); tw(x, -744, w * 0.34, w * 0.34, 10, dark, h - 10); }
+  tw(338, -770, 30, 30, 218, TEAL); tw(-8, -800, 26, 26, 235, BLACK); cy(-8, 256, -800, 5, 0.4, 42, dark, 8);            // glass tower, and the one with the spire
+  tw(372, -790, 30, 30, 272, TEAL); tw(408, -830, 28, 28, 257, WHITE);
+  const fill = [BLACK, GREY, SILVER, TEAL, GREY, RED];
+  for (let i = 0; i < 70; i++) { const x = -760 + i * 22 + hh(i) * 10, h = 40 + hh(i * 2.7) * 120, w = 18 + hh(i + 9) * 16; tw(x, -850 - hh(i * 4.1) * 70, w, w, h, fill[i % 6]); }
 })();
 
 /* ---------- road ---------- */
+const RXp = k => (8 + k) * 32;
 const PUDDLES = []; for (let i = 0; i < 9; i++) PUDDLES.push([118 + hh(i * 3.3) * 270, hh(i * 7.9) * 512, 14 + hh(i * 2.1) * 30, 9 + hh(i * 4.7) * 18, hh(i) * 3]);
 const roadTex = canvasTex(512, 512, (g) => {
   const m = 32; // px per metre, 16 m square tile
@@ -401,6 +426,10 @@ const roadTex = canvasTex(512, 512, (g) => {
   g.fillStyle = '#8a929e'; for (const s of [-1, 1]) g.fillRect((8 + s * 0.7475) * m - 2, 0, 4, 512); // rails at TTC gauge, 1495 mm
   g.fillStyle = '#c9b458'; for (const s of [-1, 1]) for (const y of [40, 296]) g.fillRect((8 + s * 1.22) * m - 2, y, 4, 110);
   g.strokeStyle = '#161a22'; g.lineWidth = 1; for (let i = 0; i < 8; i++) { let x = 110 + hh(i * 5.3) * 290, y = hh(i * 9.1) * 512; g.beginPath(); g.moveTo(x, y); for (let k = 0; k < 6; k++) { x += (hh(i + k * 3.7) - 0.5) * 30; y += 8 + hh(i * 2 + k) * 14; g.lineTo(x, y); } g.stroke(); }
+  g.fillStyle = 'rgba(214,214,206,.75)'; for (const k of [-3.72, 3.72]) g.fillRect(RXp(k) - 2, 0, 4, 512);                    // edge lines
+  for (let i = 0; i < 7; i++) { g.fillStyle = 'rgba(8,9,12,' + (0.25 + hh(i) * 0.25) + ')'; g.beginPath(); g.ellipse(120 + hh(i * 3.7) * 270, hh(i * 5.9) * 512, 8 + hh(i * 2) * 16, 5 + hh(i * 4) * 9, hh(i) * 3, 0, 7); g.fill(); }  // oil
+  for (const k of [-4.55, 4.55]) { g.fillStyle = '#0e1015'; g.fillRect(RXp(k) - 9, 200, 18, 26); g.fillStyle = '#3a3f4a'; for (let j = 0; j < 5; j++) g.fillRect(RXp(k) - 8, 202 + j * 5, 16, 2); }                         // drain grates
+  for (let i = 0; i < 150; i++) { g.fillStyle = ['#a8571c', '#c08a24', '#7a3a16', '#b0461c'][i % 4]; const e = hh(i * 2.9) > 0.5 ? RXp(-4.5) + hh(i * 3.3) * 34 : RXp(4.5) - hh(i * 3.3) * 34; g.fillRect(e, hh(i * 7.1) * 512, 4, 3); }  // November leaves in the gutter
   g.fillStyle = '#171b24'; g.fillRect(150, 300, 70, 46); g.fillRect(330, 90, 54, 80);       // tar patches
   g.fillStyle = '#2a2f3a'; g.beginPath(); g.arc(352, 400, 12, 0, 7); g.fill(); g.strokeStyle = '#14171e'; g.beginPath(); g.arc(352, 400, 9, 0, 7); g.stroke(); // manhole
   g.fillStyle = 'rgba(0,0,0,.4)'; for (const q of PUDDLES) { g.beginPath(); g.ellipse(q[0], q[1], q[2], q[3], q[4], 0, 7); g.fill(); }
@@ -431,6 +460,19 @@ const roadNormal = normalFrom(512, 512, (g) => {
 for (const t of [wetTex, roadNormal]) t.wrapT = T.RepeatWrapping;
 const road = new T.Mesh(new T.PlaneGeometry(16, 416), new T.MeshStandardMaterial({map:roadTex, roughnessMap:wetTex, metalnessMap:wetTex, normalMap:roadNormal, color:new T.Color(0.62, 0.64, 0.7), normalScale:new T.Vector2(0.9, 0.9), roughness:1, metalness:1, envMapIntensity:1.2}));
 road.receiveShadow = true;
+function inPuddle(x, z) { // is this spot on the road inside one of the painted puddles, given how far the road has scrolled?
+  const px = (x + 8) * 32, v = (20 - z) / 16 + roadTex.offset.y, py = (1 - (v - Math.floor(v))) * 512;
+  for (const q of PUDDLES) { let dx = px - q[0], dy = py - q[1]; if (dy > 256) dy -= 512; if (dy < -256) dy += 512;
+    const c = Math.cos(q[4]), sn = Math.sin(q[4]), u = dx * c + dy * sn, w = -dx * sn + dy * c; if (u * u / (q[2] * q[2]) + w * w / (q[3] * q[3]) < 1) return true; }
+  return false;
+}
+const ripples = [], rippleGeo = new T.RingGeometry(0.82, 1, 28);
+function splash(x, z) {
+  for (let k = 0; k < 9; k++) { const m = new T.Mesh(SPH, emit(0xc4d6f2, 1.3)), sz = rnd(0.02, 0.05); m.scale.set(sz, sz * 1.6, sz); m.position.set(x + rnd(-0.15, 0.15), 0.05, z + rnd(-0.15, 0.15)); scene.add(m);
+    parts.push({m, vx:rnd(-1.6, 1.6), vy:rnd(1.6, 3.8), vz:rnd(-1.2, 1.2) + S.speed * 0.25, life:rnd(0.3, 0.55)}); }
+  const r = new T.Mesh(rippleGeo, new T.MeshBasicMaterial({color:C(0xc4d6f2, 1.2), transparent:true, opacity:0.7, depthWrite:false})); r.rotation.x = -Math.PI / 2; r.position.set(x, 0.035, z); scene.add(r); ripples.push({m:r, t:0});
+  tone(rnd(700, 1100), 0.07, 'triangle', 0.018, 260);
+}
 for (const s of [-1, 1]) box(scene, 0.3, 0.16, 416, 0x6a6e78, s * 4.95, 0.08, -188);
 road.rotation.x = -Math.PI / 2; road.position.set(0, 0, -188); scene.add(road);
 const skirt = new T.Mesh(new T.PlaneGeometry(400, 416), bas(0x12151c)); skirt.rotation.x = -Math.PI / 2; skirt.position.set(0, -0.05, -188); scene.add(skirt);
@@ -504,7 +546,7 @@ const roomTex = [
     g.fillStyle = 'rgba(40,22,10,.85)'; g.fillRect(22, 70, 34, 26); g.fillRect(48, 50, 4, 22); g.fillStyle = '#1a120c'; g.fillRect(30, 0, 4, 96); g.fillRect(0, 38, 64, 4); }),
   canvasTex(64, 96, g => { const gr = g.createLinearGradient(0, 0, 64, 96); gr.addColorStop(0, '#16283c'); gr.addColorStop(1, '#6f9cc8'); g.fillStyle = gr; g.fillRect(0, 0, 64, 96);
     g.fillStyle = '#d8ecff'; g.fillRect(38, 62, 20, 13); g.fillStyle = 'rgba(8,14,22,.8)'; g.fillRect(0, 80, 64, 16); for (let y = 0; y < 30; y += 5) g.fillRect(0, y, 64, 3); g.fillStyle = '#0c1118'; g.fillRect(30, 0, 4, 96); g.fillRect(0, 38, 64, 4); })];
-const litMats = roomTex.map(t => new T.MeshStandardMaterial({color:0x000000, emissive:new T.Color(2.3, 2.3, 2.3), emissiveMap:t, roughness:0.25}));
+const litMats = roomTex.map(t => new T.MeshStandardMaterial({color:0x000000, emissive:new T.Color(1.5, 1.5, 1.5), emissiveMap:t, roughness:0.25}));
 const FACE = new T.Quaternion().setFromAxisAngle(new T.Vector3(0, 1, 0), -Math.PI / 2);
 function bake(list, geo, mat, plane) {
   if (!list.length) return null;
@@ -516,7 +558,7 @@ function bake(list, geo, mat, plane) {
   return {geo, mat, n, m:new T.BufferAttribute(m, 16), c:col && new T.BufferAttribute(col, 3)};
 }
 const newKit = h => ({box:[], cyl:[], gd:[], l0:[], l1:[], single:[], h});
-const finish = B => ({singles:B.single, h:B.h, inst:[bake(B.box, BOX, trimMat), bake(B.cyl, CYL, trimMat), bake(B.gd, PLANE, winMat, true), bake(B.l0, PLANE, litMats[0], true), bake(B.l1, PLANE, litMats[1], true)].filter(Boolean)});
+const finish = B => ({singles:B.single, h:B.h, signs:B.signs || [], shop:!!B.shop, inst:[bake(B.box, BOX, trimMat), bake(B.cyl, CYL, trimMat), bake(B.gd, PLANE, winMat, true), bake(B.l0, PLANE, litMats[0], true), bake(B.l1, PLANE, litMats[1], true)].filter(Boolean)});
 function instKit(k) {
   const g = new T.Group();
   for (const q of k.singles) { const m = new T.Mesh(q.geo, q.mat); m.position.fromArray(q.p); if (q.s) m.scale.fromArray(q.s); g.add(m); }
@@ -536,7 +578,8 @@ function masonry(o) {
   B.single.push({geo:ubox(BD, o.H, W), mat:o.wall, p:[BD / 2, o.H / 2, 0]});
   for (let f = 0; f < fl; f++) {
     const y = gh + f * o.floorH + o.floorH * 0.54;
-    for (let b = 0; b < o.bays; b++) windowAt(B, y, -W / 2 + (b + 0.5) * bw, o.ribbon ? bw * 0.86 : bw * 0.5, o.floorH * (o.ribbon ? 0.5 : 0.6), {frame:o.frame, lit:o.lit, sill:o.ribbon ? 0 : o.trim, lintel:o.ribbon ? 0 : o.trim});
+    for (let b = 0; b < o.bays; b++) { const z = -W / 2 + (b + 0.5) * bw; windowAt(B, y, z, o.ribbon ? bw * 0.86 : bw * 0.5, o.floorH * (o.ribbon ? 0.5 : 0.6), {frame:o.frame, lit:o.lit, sill:o.ribbon ? 0 : o.trim, lintel:o.ribbon ? 0 : o.trim});
+      if (!o.ribbon && hh(f * 7.3 + b * 3.1 + o.H) > 0.86) B.box.push([-0.3, y - o.floorH * 0.3 + 0.2, z + bw * 0.1, 0.5, 0.36, 0.62, 0x9a9da4]); }
     if (o.ribbon) B.box.push([-0.1, gh + f * o.floorH + 0.12, 0, 0.26, o.floorH * 0.3, W, o.trim]); else B.box.push([-0.08, gh + f * o.floorH, 0, 0.22, 0.15, W, o.trim]);
   }
   if (o.pil) for (let b = 0; b <= o.bays; b++) B.box.push([-0.12, gh + (o.H - gh) / 2 - 0.3, clamp(-W / 2 + b * bw, -W / 2 + 0.22, W / 2 - 0.22), 0.3, o.H - gh - 0.6, 0.44, o.trim]);
@@ -549,7 +592,8 @@ function masonry(o) {
     for (let i = 0; i < 3; i++) { const z = -W / 2 + (i + 0.5) * sb;
       glassAt(B, 0, 1.85, z, sb - 0.7, 2.7, 0.65); B.box.push([-0.06, 0.25, z, 0.18, 0.5, sb - 0.5, 0x1c1e24], [-0.06, 3.26, z, 0.16, 0.12, sb - 0.5, 0x1c1e24], [-0.06, 1.85, z + (i - 1) * 0.6, 0.14, 2.7, 0.07, 0x1c1e24]);
       if (o.shop.awning) B.box.push([-0.88, 3.42, z, 1.75, 0.07, sb - 0.5, o.shop.awning, [0, 0, 0.3]], [-1.7, 3.03, z, 0.05, 0.3, sb - 0.5, o.shop.awning]); }
-    B.box.push([-0.14, gh - 0.42, 0, 0.3, 0.76, W, o.shop.sign]);
+    B.box.push([-0.14, gh - 0.42, 0, 0.3, 0.76, W, o.shop.sign], [-0.08, 1.3, 0.75, 0.12, 2.5, 1.0, 0x241812], [-0.15, 1.3, 0.4, 0.05, 0.3, 0.04, 0xc8b070]);
+    B.signs = [0, 1, 2].map(i => ({x:-0.3, y:gh - 0.42, z:-W / 2 + (i + 0.5) * sb, w:sb - 0.5, h:0.68})); B.shop = true;
   } else {
     B.box.push([-0.1, 0.65, 0, 0.32, 1.3, W, o.trim], [-0.06, 1.75, 0, 0.2, 3.2, 2.3, 0x0d0f14], [-0.2, 3.5, 0, 0.5, 0.3, 3.1, o.trim]);
     for (const dz of [-1.35, 1.35]) B.box.push([-0.2, 1.75, dz, 0.45, 3.4, 0.4, o.trim]);
@@ -559,15 +603,18 @@ function masonry(o) {
       B.box.push([-0.68, y, z, 1.25, 0.06, len, iron], [-1.28, y + 0.5, z, 0.04, 0.04, len, iron], [-1.28, y + 0.95, z, 0.04, 0.04, len, iron]);
       for (const dz of [-len / 2, 0, len / 2]) B.box.push([-1.28, y + 0.48, z + dz, 0.04, 0.96, 0.04, iron]);
       if (f < fl) B.box.push([-0.68, y + o.floorH / 2, z, 0.5, 0.06, Math.hypot(o.floorH, len * 0.8), iron, [Math.atan2(o.floorH, len * 0.8) * (f % 2 ? 1 : -1), 0, 0]]); } }
+  B.box.push([-0.1, o.H / 2, W / 2 - 0.55, 0.1, o.H - 1, 0.1, 0x24262b], [3.5, o.H + 0.6, -3, 2.2, 1.2, 1.6, 0x6a6e78], [7, o.H + 0.4, 1.5, 1.4, 0.8, 1.4, 0x5a5e68]); B.cyl.push([6, o.H + 2.5, -4, 0.04, 5, 0.04, 0x2a2c30]);
   if (o.tank) { B.cyl.push([4, o.H + 2.6, 2, 1.35, 2.4, 1.35, 0x4a3a2c], [4, o.H + 3.95, 2, 1.5, 0.3, 1.5, 0x2a2420]); for (const dx of [-0.9, 0.9]) for (const dz of [-0.9, 0.9]) B.box.push([4 + dx, o.H + 0.7, 2 + dz, 0.12, 1.4, 0.12, 0x2a2420]); }
   return finish(B);
 }
 function tower(o) {
   const B = newKit(o.H), W = BW, bw = W / 4;
   B.single.push({geo:BOX, mat:o.mat, p:[BD / 2, o.H / 2 + 3.6, 0], s:[BD, o.H - 7.2, W]}, {geo:ubox(BD - 0.2, 7.2, W - 0.1), mat:o.base, p:[BD / 2 + 0.1, 3.6, 0]});
-  for (let i = 0; i < 4; i++) { const z = -W / 2 + (i + 0.5) * bw; glassAt(B, -0.05, 3.3, z, bw - 0.8, 5.4, 0.8); B.box.push([-0.1, 3.3, z - bw / 2, 0.5, 6.6, 0.6, o.fin], [-0.09, 3.3, z, 0.12, 5.4, 0.06, 0x1c1e24]); }
+  for (let i = 0; i < 4; i++) { const z = -W / 2 + (i + 0.5) * bw; glassAt(B, -0.05, 3.3, z, bw - 0.8, 5.4, 0.45); B.box.push([-0.1, 3.3, z - bw / 2, 0.5, 6.6, 0.6, o.fin], [-0.09, 3.3, z, 0.12, 5.4, 0.06, 0x1c1e24]); }
   B.box.push([-0.1, 3.3, W / 2 - 0.3, 0.5, 6.6, 0.6, o.fin], [-1.2, 6.5, 0, 2.6, 0.24, W * 0.62, o.fin], [-0.06, 7.1, 0, 0.4, 0.5, W, o.fin]);
   for (let z = -W / 2 + 0.3; z <= W / 2; z += 1.58) B.box.push([-0.16, 7.2 + (o.H - 7.2) / 2, z, 0.34, o.H - 7.2, 0.13, o.fin]);
+  for (let y = 19; y < o.H - 4; y += 13.5) B.box.push([-0.1, y, 0, 0.26, 0.55, W, o.fin]);
+  B.box.push([BD / 2, o.H + 1.6, 0, BD * 0.6, 3.2, W * 0.6, 0x1c1e24], [-2.48, 6.5, 0, 0.1, 0.84, W * 0.62, 0x14161c]); B.signs = [{x:-2.55, y:6.5, z:0, w:W * 0.6, h:0.64}];
   return finish(B);
 }
 function colonnade() {
@@ -579,6 +626,7 @@ function colonnade() {
     if (i < n - 1) { const zm = z + (W - 2.3) / (n - 1) / 2; windowAt(B, 5.9, zm, 1.45, 6.4, {x:1.7, frame:0x2a2c30, lit:0.75, lintel:lt}); windowAt(B, 15.1, zm, 1.2, 1.5, {x:1.7, frame:0x2a2c30, lit:0.3, sill:lt}); } }
   B.box.push([0.3, 12.4, 0, 3.0, 2.0, W, 0x8f887b], [0.2, 13.55, 0, 3.5, 0.3, W + 0.5, lt], [0.1, 11.55, 0, 3.1, 0.2, W + 0.1, lt], [1.5, 16.8, 0, 0.7, 0.4, W + 0.3, lt]);
   for (let z = -W / 2 + 0.3; z < W / 2; z += 0.75) B.box.push([-1.35, 13.28, z, 0.3, 0.22, 0.32, lt]);
+  B.signs = [{x:-1.22, y:12.4, z:0, w:W - 3, h:1.15, carved:true}];
   return finish(B);
 }
 function houses(cols) { // a pair of bay-and-gable houses
@@ -588,6 +636,7 @@ function houses(cols) { // a pair of bay-and-gable houses
     B.single.push({geo:ubox(BD, H, hw), mat:sid, p:[BD / 2, H / 2, zc]}, {geo:gableGeo(gw, gh, BD), mat:sid, p:[BD / 2, H, zc]});
     for (const k of [-1, 1]) B.box.push([BD / 2 - 0.2, H + gh / 2 + 0.05, zc + k * gw / 4, BD + 0.9, 0.12, sl + 0.25, 0x25222a, [k * ang, 0, 0]], [-0.14, H + gh / 2 + 0.02, zc + k * gw / 4, 0.14, 0.26, sl + 0.3, white, [k * ang, 0, 0]]);
     const zb = zc - m * hw * 0.2; // bay window
+    (B.signs = B.signs || []).push({x:-0.93, y:3.32, z:zb, w:2.3, h:0.5}); B.box.push([BD / 2, H + gh + 0.1, zc + 1.3, 0.7, 1.7, 0.7, 0x5a3a32]);
     B.box.push([-0.45, 2.95, zb, 0.9, 5.3, 2.5, col], [-0.5, 5.7, zb, 1.1, 0.16, 2.8, white], [-0.5, 0.35, zb, 1.0, 0.7, 2.6, 0x55524c]);
     windowAt(B, 2.1, zb, 1.5, 1.6, {x:-0.9, frame:white, lit:0.55, sill:white}); windowAt(B, 4.5, zb, 1.5, 1.5, {x:-0.9, frame:white, lit:0.4, sill:white});
     const zd = zc + m * hw * 0.28; // porch and door
@@ -608,7 +657,7 @@ function board(text, bg, fg, w, h, vertical) {
 let BILL = null, BLADE = null;
 function makeBoards() {
   BILL = [['STAY INDOORS', '#d9261c', '#0b0b12'], ['TTC: NO SERVICE', '#ffb347', '#0b0b12'], ['EVACUATE SOUTH', '#2bb3c0', '#0b0b12'], ['DO NOT STOP', '#c23fa0', '#0b0b12']].map(b => board(b[0], b[1], b[2], 256, 160));
-  BLADE = [['NOODLE', '#c4281c', '#f2d36b'], ['DIM SUM', '#d6a42a', '#7a140e'], ['TEA', '#c4281c', '#f2d36b'], ['BBQ', '#1f6b4a', '#f2d36b']].map(b => board(b[0], b[1], b[2], 64, 256, true));
+  BLADE = [['SWATOW', '#c4281c', '#f2d36b'], ['ROL SAN', '#d6a42a', '#7a140e'], ['PHO HUNG', '#c4281c', '#f2d36b'], ['MOCAMBO', '#0a140c', '#58f08a']].map(b => board(b[0], b[1], b[2], 64, 256, true));
 }
 makeBoards();
 const stoneW = wallMat('stone'), brickR = wallMat('brickRed'), brickB = wallMat('brickBrown'), conc = wallMat('concrete'), darkPanel = wallMat('panel', 0x3a4250, 0.5), paleStone = wallMat('stone', 0xd8d2c4);
@@ -620,22 +669,55 @@ const KITS = [
   [() => masonry({H:10.4, bays:4, floorH:3.0, wall:brickR, trim:0x8a8070, frame:0x2a1c18, lit:0.4, cornice:true, shop:{sign:0xc4281c, awning:0xa8201a}}), () => masonry({H:13.4, bays:4, floorH:3.0, wall:brickB, trim:0x8a8070, frame:0x2a1c18, lit:0.36, cornice:true, escape:true, shop:{sign:0xd6a42a, awning:0xb88a1c}}), () => masonry({H:10.4, bays:3, floorH:3.0, wall:brickR, trim:0x8a8070, frame:0xe0d8c8, lit:0.4, cornice:true, tank:true, shop:{sign:0x1f6b4a, awning:0xa8201a}})],
   [() => houses([0x8f4456, 0x347c82]), () => houses([0xbc8834, 0x56689c]), () => houses([0x64883e, 0xa8563a]), () => houses([0x4a6e9a, 0xc2b08a])],
 ].map(list => list.map(f => f()));
+// storefront names, lettered in each shop's familiar colours
+const STORES = [
+  [],
+  [['TD CENTRE', '#0d2a16', '#fff'], ['SCOTIA PLAZA', '#3a0c0c', '#fff'], ['FIRST CANADIAN PLACE', '#15171c', '#fff'], ['COMMERCE COURT', '#1a1014', '#fff'], ['ROYAL BANK PLAZA', '#0c1c3a', '#f2c84a'], ['BROOKFIELD PLACE', '#15171c', '#fff']],
+  [['Horseshoe Tavern', '#b3161a', '#fff', 'serif'], ['The Bay', '#0c0c0c', '#f2c230', 'serif'], ['Black Bull', '#111', '#f2e6c8', 'serif'], ["Steve's Music", '#f2c230', '#111'], ['Tim Hortons', '#c8102e', '#fff', 'script'], ['The Rex Jazz & Blues', '#16243c', '#f2c84a', 'serif'], ['Shoppers Drug Mart', '#f4f4f0', '#d0202a'], ['Pizza Pizza', '#f26a1c', '#fff']],
+  [['Eaton Centre', '#101216', '#fff', 'serif'], ['Sam the Record Man', '#0a0a0a', '#ff2a2a', 'sam'], ['Zanzibar', '#14081c', '#ff5ac8', 'script'], ['Massey Hall', '#7a1414', '#f2e6c8', 'serif'], ['Tim Hortons', '#c8102e', '#fff', 'script'], ['Shoppers Drug Mart', '#f4f4f0', '#d0202a'], ['Pizza Pizza', '#f26a1c', '#fff'], ['Swiss Chalet', '#c8141c', '#f2d030', 'serif'], ['LCBO', '#12332a', '#fff'], ['Second Cup', '#2a1a12', '#f2e6c8', 'serif']],
+  [["King's Noodle", '#c4281c', '#f2d36b'], ['Swatow', '#f2d36b', '#a8140e'], ['Rol San', '#12332a', '#f2d36b'], ['Dragon City', '#a8140e', '#f2d36b', 'serif'], ['Hua Sheng Supermarket', '#f4f4f0', '#c4281c'], ['El Mocambo', '#0a140c', '#58f08a', 'script'], ['Lucky Moose Food Mart', '#f2d36b', '#1c4f9c'], ["Mother's Dumplings", '#c4281c', '#fff', 'serif'], ['Pho Hung', '#1f6b4a', '#fff']],
+  [['Blue Banana Market', '#1c4f9c', '#f2d030'], ['Global Cheese', '#f2d030', '#7a1414'], ['Courage My Love', '#5a1c5a', '#f2e6c8', 'script'], ["Sanagan's Meat Locker", '#f4f4f0', '#111', 'serif'], ['Seven Lives Tacos', '#12998a', '#fff'], ['Moonbean Coffee', '#2a1a12', '#f2e6c8', 'serif'], ["Tom's Place", '#16243c', '#fff', 'serif'], ["Honest Ed's", '#f2d030', '#d0141c', 'serif'], ["Jimmy's Coffee", '#111', '#fff', 'script'], ['Rasta Pasta', '#1f6b4a', '#f2d030']],
+];
+const storeTex = {};
+function storeMat(st, carved) {
+  const k = st[0] + carved; if (storeTex[k]) return storeTex[k];
+  const map = canvasTex(512, 96, (g) => {
+    g.fillStyle = carved ? '#8f887b' : st[1]; g.fillRect(0, 0, 512, 96);
+    if (!carved) { g.strokeStyle = st[2]; g.globalAlpha = 0.5; g.lineWidth = 3; g.strokeRect(5, 5, 502, 86); g.globalAlpha = 1; }
+    g.fillStyle = carved ? '#3c3830' : st[2]; g.textAlign = 'center'; g.textBaseline = 'middle';
+    const f = st[3], txt = f === 'script' || f === 'serif' && !carved ? st[0] : st[0].toUpperCase();
+    g.font = f === 'script' ? 'italic 700 62px Georgia, "Times New Roman", serif' : f === 'serif' ? '700 56px Georgia, "Times New Roman", serif' : f === 'sam' ? '800 50px ' + DISP : '800 60px ' + DISP;
+    if (f === 'sam') { // two neon records
+      g.strokeStyle = '#ff2a2a'; g.shadowColor = '#ff2a2a'; g.shadowBlur = 8; for (const cx of [50, 462]) for (const r of [38, 28, 18, 7]) { g.lineWidth = 3; g.beginPath(); g.arc(cx, 48, r, 0, 7); g.stroke(); }
+      g.fillText(txt, 256, 50, 320); g.shadowBlur = 0; }
+    else { if (!carved && (st[1] === '#0a140c' || st[1] === '#14081c')) { g.shadowColor = st[2]; g.shadowBlur = 10; } g.fillText(txt, 256, 50, 470); g.shadowBlur = 0; }
+  });
+  return storeTex[k] = carved ? new T.MeshStandardMaterial({map, roughness:0.8, envMapIntensity:0.5}) : new T.MeshBasicMaterial({map, color:new T.Color(1.55, 1.55, 1.55)});
+}
+const spillMat = c => mats['sp' + c] || (mats['sp' + c] = new T.MeshBasicMaterial({map:glowTex, color:C(c, 1), blending:T.AdditiveBlending, transparent:true, opacity:0.13, depthWrite:false}));
 const NB = 15, buildings = [];
 for (let i = 0; i < NB * 2; i++) {
   const g = new T.Group(), side = i % 2 ? 1 : -1;
-  const b = {g, side, serial:i, kit:null, bill:new T.Mesh(PLANE, BILL[0]), blade:new T.Mesh(PLANE, BLADE[0])};
-  g.add(b.bill, b.blade);
-  b.bill.scale.set(4.6, 2.9, 1); b.bill.position.set(side * 6.2, 7.6, 0); b.blade.scale.set(1.2, 4.4, 1); b.blade.position.set(side * 6.9, 6.6, 0);
+  const b = {g, side, serial:i, kit:null, bill:new T.Mesh(PLANE, BILL[0]), blade:new T.Mesh(PLANE, BLADE[0]), signs:[0, 1, 2].map(() => new T.Mesh(PLANE, BILL[0])), spill:new T.Mesh(PLANE, spillMat(0xffb060))};
+  g.add(b.bill, b.blade, b.spill, ...b.signs);
+  for (const sg of b.signs) sg.rotation.y = -side * Math.PI / 2;
+  b.spill.rotation.x = -Math.PI / 2; b.spill.scale.set(8.5, SLOT * 1.1, 1); b.spill.position.set(side * 4.6, 0.045, 0);
+  b.bill.scale.set(4.6, 2.9, 1); b.bill.position.set(side * 6.2, 8.4, 0); b.blade.scale.set(1.2, 4.4, 1); b.blade.position.set(side * 6.9, 7.2, 0);
   g.position.z = 10 - Math.floor(i / 2) * SLOT; scene.add(g); buildings.push(b);
 }
 const CITY_HALL = 1250;
 function skin(b) {
   const wd = S.dist - b.g.position.z, d = dIndex(wd), r = hh(b.serial * 1.37 + b.side), kit = KITS[d][Math.floor(r * KITS[d].length)];
-  const ch = Math.floor(wd / 3000) * 3000 + CITY_HALL;
+  const ch = Math.floor(wd / 3000) * 3000 + CITY_HALL, shown = !(b.side < 0 && Math.abs(wd - ch) < 34), kx = 8.15 + r * 0.7;
   if (b.kit) b.g.remove(b.kit);
-  b.kit = instKit(kit); b.kit.scale.x = b.side; b.kit.position.x = b.side * (8.15 + r * 0.7); b.kit.visible = !(b.side < 0 && Math.abs(wd - ch) < 34); b.g.add(b.kit);
-  b.bill.visible = d === 3 && r > 0.3; if (b.bill.visible) b.bill.material = BILL[b.serial % 4];
-  b.blade.visible = d === 4 && r > 0.25; if (b.blade.visible) b.blade.material = BLADE[b.serial % 4];
+  b.kit = instKit(kit); b.kit.scale.x = b.side; b.kit.position.x = b.side * kx; b.kit.visible = shown; b.g.add(b.kit);
+  let first = null;
+  b.signs.forEach((sg, i) => { const q = kit.signs[i], list = STORES[d]; sg.visible = shown && !!q && (q.carved || list.length > 0); if (!sg.visible) return;
+    const st = q.carved ? ['Union Station', '', '', 'serif'] : list[Math.floor(hh(b.serial * 7.7 + i * 3.3 + b.side) * list.length)]; first = first || st;
+    sg.material = storeMat(st, !!q.carved); sg.scale.set(Math.min(q.w, q.h * 5.6), q.h, 1); sg.position.set(b.side * (kx + q.x - 0.02), q.y, q.z); });
+  b.spill.visible = shown && kit.shop; if (b.spill.visible) b.spill.material = spillMat(first && first[1] !== '#f4f4f0' && hh(b.serial) > 0.5 ? parseInt(first[1].slice(1).replace(/^(.)(.)(.)$/, '$1$1$2$2$3$3'), 16) || 0xffb060 : 0xffb060);
+  b.bill.visible = shown && d === 3 && r > 0.3; if (b.bill.visible) b.bill.material = BILL[b.serial % 4];
+  b.blade.visible = shown && d === 4 && r > 0.25; if (b.blade.visible) b.blade.material = BLADE[b.serial % 4];
 }
 // the two curved towers and the saucer
 const cityHall = new T.Group(); scene.add(cityHall);
@@ -668,21 +750,48 @@ for (let i = 0; i < 12; i++) {
   g.position.z = 6 - i * 18; scene.add(g); lights.push({g, lamp, gl, pool, shaft, serial:i, side, on:true});
 }
 const signTex = {};
-function signMat(d, street) {
+const SUFFIX = {St:1, Ave:1, W:1, E:1, Rd:1, Sq:1};
+function signMat(d, street) { // Toronto street-name blade: white lettering on blue, district named along the top
   const k = d.name + '|' + street;
-  return signTex[k] || (signTex[k] = new T.MeshBasicMaterial({color:new T.Color(0.7, 0.7, 0.7), map:canvasTex(256, 96, (g) => {
-    g.fillStyle = '#ece7da'; g.fillRect(0, 0, 256, 96); g.fillStyle = '#1c4f9c'; g.fillRect(0, 0, 256, 30);
-    g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#fff'; g.font = '600 20px ' + DISP; g.fillText(d.name.toUpperCase(), 128, 16);
-    g.fillStyle = '#11161f'; g.font = '800 54px ' + DISP; g.fillText(street.toUpperCase(), 128, 65, 240);
+  return signTex[k] || (signTex[k] = new T.MeshBasicMaterial({color:new T.Color(0.85, 0.85, 0.85), map:canvasTex(384, 112, (g) => {
+    g.fillStyle = '#fff'; g.fillRect(0, 0, 384, 112); g.fillStyle = '#0a4a9c'; g.fillRect(4, 4, 376, 104); g.fillStyle = '#073672'; g.fillRect(4, 4, 376, 28);
+    g.textBaseline = 'middle'; g.textAlign = 'center'; g.fillStyle = '#fff'; g.font = '600 19px ' + DISP; g.fillText(d.name.toUpperCase().split('').join(' '), 192, 19);
+    const ws = street.split(' '), name = ws.filter(w => !SUFFIX[w]).join(' '), suf = ws.filter(w => SUFFIX[w]).join(' ');
+    g.font = '800 62px ' + DISP; const nw = Math.min(g.measureText(name).width, 250); g.font = '800 34px ' + DISP; const sw = suf ? g.measureText(suf).width + 12 : 0, x0 = 192 - (nw + sw) / 2;
+    g.textAlign = 'left'; g.font = '800 62px ' + DISP; g.fillText(name, x0, 72, 250); g.font = '800 34px ' + DISP; g.fillText(suf.toUpperCase(), x0 + nw + 12, 62);
   })}));
 }
-const signs = [];
-for (let i = 0; i < 4; i++) {
-  const g = new T.Group(), side = i % 2 ? -1 : 1;
-  cyl(g, 0.05, 4.3, 0x2a2f3a, side * 5.6, 2.15, 0);
-  const pl = new T.Mesh(PLANE, signMat(DISTRICTS[0], DISTRICTS[0].streets[i % 3])); pl.scale.set(2.5, 0.94, 1); pl.position.set(side * 5.6, 3.9, 0.06); g.add(pl);
-  g.position.z = -20 - i * 45; scene.add(g); signs.push({g, pl, serial:i});
+const sigMat = new T.MeshBasicMaterial({color:0xff2a1c}), SIG_ON = C(0xff2a1c, 7), SIG_OFF = C(0x2a0806);
+const zebraMat = new T.MeshStandardMaterial({transparent:true, roughness:0.6, polygonOffset:true, polygonOffsetFactor:-2, map:canvasTex(256, 64, (g) => {
+  for (let k = 0; k < 12; k++) { g.fillStyle = 'rgba(214,214,204,.8)'; g.fillRect(k * 21.33 + 4, 0, 13, 64); } g.globalCompositeOperation = 'destination-out';
+  for (let i = 0; i < 260; i++) { g.fillStyle = 'rgba(0,0,0,' + hh(i) * 0.7 + ')'; g.fillRect(hh(i * 3.1) * 256, hh(i * 7.7) * 64, 3 + hh(i * 2) * 8, 2); } })});
+const inters = [];
+function setInter(it) { const d = DISTRICTS[dIndex(S.dist - it.g.position.z)]; it.a.material = signMat(d, d.streets[1 + it.serial % 2]); it.b.material = signMat(d, d.streets[0]); }
+for (let i = 0; i < 3; i++) {
+  const g = new T.Group(), pole = gloss(0x3a3f4a), yel = gloss(0xd9a81f);
+  for (const z of [6.5, -6.5]) { const zb = new T.Mesh(PLANE, zebraMat); zb.rotation.x = -Math.PI / 2; zb.scale.set(9.6, 3.2, 1); zb.position.set(0, 0.02, z); g.add(zb); }
+  cyl(g, 0.06, 5, pole, 5.6, 2.5, 0);
+  const a = new T.Mesh(PLANE, signMat(DISTRICTS[0], 'Bay St')); a.scale.set(2.4, 0.7, 1); a.position.set(5.6, 4.0, 0.08); g.add(a);
+  const b = new T.Mesh(PLANE, signMat(DISTRICTS[0], 'Front St W')); b.scale.set(2.4, 0.7, 1); b.position.set(5.52, 4.75, 0); b.rotation.y = -Math.PI / 2; g.add(b);
+  cyl(g, 0.13, 6.8, pole, -5.7, 3.4, 0, 0.09); rod(g, 0.07, [-5.7, 6.5, 0], [0.9, 6.7, 0], pole);
+  const head = (x, y) => { rbox(g, 0.36, 1.08, 0.3, 0.1, yel, x, y, 0); for (let k = 0; k < 3; k++) { sph(g, 0.115, 0.115, 0.06, k ? lam(0x1a1c14) : sigMat, x, y + 0.34 - k * 0.34, 0.16); box(g, 0.3, 0.03, 0.2, 0x15171c, x, y + 0.47 - k * 0.34, 0.24); } };
+  head(-2.4, 5.95); head(0.3, 5.98); head(5.6, 3.0); rod(g, 0.025, [-2.4, 6.6, 0], [-2.4, 6.45, 0], pole); rod(g, 0.025, [0.3, 6.68, 0], [0.3, 6.5, 0], pole);
+  shadows(g); g.position.z = -34 - i * 90; scene.add(g); const it = {g, a, b, serial:i}; inters.push(it);
 }
+// sidewalk furniture
+const torusGeo = new T.TorusGeometry(0.24, 0.028, 8, 20); torusGeo.rotateY(Math.PI / 2);
+const PROPS = [
+  g => { cyl(g, 0.12, 0.55, 0xd9b21f, 0, 0.3, 0); sph(g, 0.13, 0.1, 0.13, 0xd9b21f, 0, 0.59, 0); cyl(g, 0.05, 0.1, 0xb3221a, 0, 0.71, 0); cyl(g, 0.17, 0.06, 0xd9b21f, 0, 0.03, 0); for (const k of [-1, 1]) cyl(g, 0.06, 0.12, 0xb3221a, k * 0.15, 0.4, 0).rotation.z = Math.PI / 2; }, // hydrant
+  g => { for (const dz of [-0.9, 0.9]) { cyl(g, 0.03, 0.9, gloss(0x8d95a3), 0, 0.45, dz); const t = new T.Mesh(torusGeo, gloss(0x8d95a3)); t.position.set(0, 0.62, dz); g.add(t); } },                                                // ring-and-post bike stands
+  g => { rbox(g, 0.5, 0.92, 0.48, 0.16, gloss(0xc4221a), 0, 0.88, 0); for (const dx of [-0.18, 0.18]) for (const dz of [-0.17, 0.17]) cyl(g, 0.025, 0.44, 0x15171c, dx, 0.22, dz); box(g, 0.02, 0.1, 0.36, 0xe8e4da, 0.252, 1.0, 0); },      // mailbox
+  g => { rbox(g, 0.5, 1.05, 1.0, 0.1, gloss(0x4a4f58), 0, 0.55, 0); [0x1c4f9c, 0x15171c, 0x2f7a43].forEach((c, k) => box(g, 0.02, 0.15, 0.22, c, 0.255, 0.86, (k - 1) * 0.3)); },                                                         // street bin
+  g => { [0x1c4f9c, 0xd9b21f, 0xb3221a].forEach((c, k) => { rbox(g, 0.4, 0.92, 0.4, 0.08, gloss(c), 0, 0.5, (k - 1) * 0.46); box(g, 0.02, 0.34, 0.3, glass, 0.203, 0.66, (k - 1) * 0.46); }); },                                           // newspaper boxes
+  g => { cyl(g, 0.04, 3.1, gloss(0x8d95a3), 0, 1.55, 0); box(g, 0.035, 0.52, 0.4, 0xe8e4da, 0, 2.62, 0); box(g, 0.04, 0.16, 0.4, 0xc4221a, 0, 2.8, 0); },                                                                                  // streetcar stop
+  g => { cyl(g, 0.09, 2.6, 0x2a211a, 0, 1.3, 0, 0.055); box(g, 1.2, 0.03, 1.2, 0x1a1c20, 0, 0.015, 0);                                                                                                                                     // bare November tree
+    for (let k = 0; k < 7; k++) { const a = k * 0.9, h = 2.1 + (k % 3) * 0.35, e = [Math.cos(a) * (0.8 + k % 2 * 0.4), h + 1.0, Math.sin(a) * (0.8 + k % 2 * 0.4)]; rod(g, 0.022, [0, h, 0], e, 0x2a211a); for (let j = 0; j < 3; j++) sph(g, 0.09, 0.06, 0.09, [0xb0561c, 0xc8922a, 0x8a3a18][(k + j) % 3], e[0] + (hh(k + j) - 0.5) * 0.5, e[1] - j * 0.18, e[2] + (hh(k * 3 + j) - 0.5) * 0.5); } },
+].map(f => { const g = new T.Group(); f(g); shadows(g); return g; });
+const props = [];
+for (let i = 0; i < 14; i++) { const g = new T.Group(), side = i % 2 ? 1 : -1; g.position.set(side * 6.35, 0, 2 - i * 15.5); g.rotation.y = side > 0 ? Math.PI : 0; g.add(PROPS[i % PROPS.length].clone()); scene.add(g); props.push({g, serial:i}); }
 const lanterns = [];
 for (let i = 0; i < 6; i++) {
   const g = new T.Group(); box(g, 15, 0.03, 0.03, bas(0x0a0c12), 0, 7.2, 0);
@@ -820,7 +929,7 @@ for (let k = 0; k < 9; k++) {
 }
 
 /* ---------- obstacles and pickups ---------- */
-const tramSign = {};
+const tramSign = {}, tramGlass = new T.MeshStandardMaterial({color:C(0x1a2028), emissive:C(0xffc890, 0.3), roughness:0.08, metalness:0.8, envMapIntensity:2});
 function build(type, o) {
   const g = new T.Group();
   switch (type) {
@@ -850,16 +959,25 @@ function build(type, o) {
       for (const dx of [-0.62, 0.62]) { sph(g, 0.17, 0.08, 0.05, bas(0xd8d2c0), dx, 0.72, 2.1); sph(g, 0.07, 0.05, 0.04, blinkMat, dx * 1.32, 0.7, 2.06); }
       rbox(g, 1.7, 0.16, 0.12, 0.06, 0x1a1c22, 0, 0.36, 2.1);
       g.rotation.y = (o.skew || 0); break; }
-    case 'tram': {
-      const red = gloss(0xb3221a);
-      rbox(g, 2.4, 2.7, 15, 0.5, red, 0, 1.85, 0); box(g, 2.2, 0.5, 13.8, 0x14161c, 0, 0.3, 0);
-      for (const s of [-1, 1]) { box(g, 0.03, 0.26, 13.6, gloss(0xe4dfd2), s * 1.2, 1.42, 0); box(g, 0.03, 0.8, 13.4, glass, s * 1.205, 2.3, 0); for (let k = -3; k <= 3; k++) box(g, 0.04, 0.82, 0.14, red, s * 1.21, 2.3, k * 2.1); }
-      for (const dz of [-5.2, -2.4, 2.4, 5.2]) for (const s of [-1, 1]) cyl(g, 0.3, 0.14, 0x0d0f13, s * 1.0, 0.3, dz).rotation.z = Math.PI / 2;
+    case 'tram': { // three articulated sections, front toward the player
+      const red = gloss(0xb81f18), white = gloss(0xe8e4da), dk = lam(0x15171c), steel = gloss(0x8a8f9a);
+      for (const [zc, len] of [[4.95, 5.0], [0, 4.5], [-4.95, 5.0]]) {
+        rbox(g, 2.42, 2.7, len, 0.5, red, 0, 1.9, zc); box(g, 2.3, 0.4, len - 0.5, dk, 0, 0.42, zc); rbox(g, 1.7, 0.3, len * 0.62, 0.16, steel, 0, 3.37, zc);
+        for (const sd of [-1, 1]) { box(g, 0.03, 0.95, len - 0.7, tramGlass, sd * 1.212, 2.32, zc); box(g, 0.035, 0.11, len - 0.5, white, sd * 1.214, 1.73, zc); box(g, 0.035, 0.09, len - 0.5, white, sd * 1.214, 2.92, zc);
+          for (const dz of [-len / 4, len / 4]) { cyl(g, 0.3, 0.14, 0x0d0f13, sd * 1.02, 0.32, zc + dz).rotation.z = Math.PI / 2; cyl(g, 0.14, 0.16, steel, sd * 1.02, 0.32, zc + dz).rotation.z = Math.PI / 2; } }
+        for (let k = -1; k <= 1; k += 2) box(g, 0.04, 0.95, 0.09, dk, 1.216, 2.32, zc + k * len / 5);
+        const dz = zc > 0 ? -0.7 : zc < 0 ? 0.7 : 0; // doors on the kerb side
+        box(g, 0.04, 2.15, 1.3, tramGlass, -1.222, 1.72, zc + dz); box(g, 0.05, 2.2, 0.05, dk, -1.226, 1.72, zc + dz); box(g, 0.05, 0.06, 1.4, dk, -1.226, 2.82, zc + dz); box(g, 0.06, 0.05, 1.3, emit(0xe8c020, 1.2), -1.226, 0.66, zc + dz); sph(g, 0.03, 0.03, 0.03, emit(0x38e070, 3), -1.23, 2.9, zc + dz + 0.75);
+      }
+      for (const zc of [2.4, -2.4]) for (let k = -1; k <= 1; k++) box(g, 2.2 + (k ? 0 : 0.12), 2.5, 0.07, 0x1a1c20, 0, 1.85, zc + k * 0.085);                // bellows
       const k = o.label, m = tramSign[k] || (tramSign[k] = new T.MeshBasicMaterial({color:new T.Color(2.2, 2.2, 2.2), map:canvasTex(256, 48, (c) => { c.fillStyle = '#0b0b0b'; c.fillRect(0, 0, 256, 48); c.fillStyle = '#ffb347'; c.font = '600 30px ' + DISP; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(k, 128, 26, 240); })}));
-      const s = new T.Mesh(PLANE, m); s.scale.set(1.7, 0.32, 1); s.position.set(0, 2.9, 7.52); g.add(s);
-      rbox(g, 2.0, 1.0, 0.1, 0.08, glass, 0, 2.15, 7.47); box(g, 2.3, 0.22, 0.06, gloss(0xe4dfd2), 0, 1.42, 7.49);
-      for (const dx of [-0.8, 0.8]) { sph(g, 0.13, 0.13, 0.05, emit(0xffe2b0, 6), dx, 1.05, 7.5); glow(g, 0xffc880, 1.6, dx, 1.05, 7.6, 0.5); }
-      rbox(g, 1.5, 0.3, 4, 0.2, 0x8a8f9a, 0, 3.3, -1); const pa = cyl(g, 0.03, 2.5, 0x12151c, 0, 4.4, 1.2); pa.rotation.x = 0.35; cyl(g, 0.03, 1.4, 0x12151c, 0, 5.55, 1.62).rotation.z = Math.PI / 2; break; }
+      rbox(g, 2.0, 0.42, 0.1, 0.08, dk, 0, 3.02, 7.42); const sg = new T.Mesh(PLANE, m); sg.scale.set(1.8, 0.32, 1); sg.position.set(0, 3.02, 7.475); g.add(sg);
+      rbox(g, 2.12, 1.28, 0.12, 0.1, glass, 0, 2.22, 7.43); box(g, 2.34, 0.15, 0.06, white, 0, 1.5, 7.46); rbox(g, 2.2, 0.36, 0.3, 0.12, dk, 0, 0.64, 7.4); cyl(g, 0.09, 0.3, steel, 0, 0.64, 7.6).rotation.x = Math.PI / 2;
+      for (const sd of [-1, 1]) { rod(g, 0.012, [sd * 0.25, 1.66, 7.5], [sd * 0.75, 2.5, 7.5], dk); rbox(g, 0.1, 0.2, 0.16, 0.05, dk, sd * 1.3, 2.75, 7.2);
+        for (const dx of [0.84, 0.62]) { sph(g, 0.1, 0.1, 0.04, emit(0xffe6b8, 6), sd * dx, 1.14, 7.47); } glow(g, 0xffd090, 2.2, sd * 0.73, 1.14, 7.62, 0.6); sph(g, 0.05, 0.05, 0.03, emit(0xff3020, 2), sd * 1.02, 1.14, 7.45); }
+      const pool = new T.Mesh(PLANE, mats.tramPool || (mats.tramPool = new T.MeshBasicMaterial({map:glowTex, color:C(0xffd090, 0.9), blending:T.AdditiveBlending, transparent:true, opacity:0.3, depthWrite:false}))); pool.rotation.x = -Math.PI / 2; pool.scale.set(5, 8, 1); pool.position.set(0, 0.05, 11); g.add(pool);
+      box(g, 0.9, 0.12, 1.2, dk, 0, 3.55, 0.2); rod(g, 0.03, [0, 3.6, -0.3], [0, 4.6, 0.7], dk); rod(g, 0.03, [0, 4.6, 0.7], [0, 5.52, 0], dk); rod(g, 0.03, [-0.75, 5.54, 0], [0.75, 5.54, 0], steel); rod(g, 0.02, [-0.3, 3.6, -0.3], [-0.3, 4.6, 0.7], dk); rod(g, 0.02, [0.3, 3.6, -0.3], [0.3, 4.6, 0.7], dk);
+      break; }
     case 'scaffold': {
       const pipe = gloss(0x8d95a3);
       for (const dz of [-0.48, 0, 0.48]) box(g, 10.4, 0.07, 0.44, 0x9a7a48, 0, 1.44, dz); const p = new T.Mesh(PLANE, hazardWide); p.scale.set(10.4, 0.34, 1); p.position.set(0, 1.24, 0.76); g.add(p); box(g, 10.4, 0.36, 0.06, 0x6d5530, 0, 1.24, 0.72);
@@ -926,7 +1044,7 @@ function reset() {
   ents = []; shots = []; parts = [];
   Object.assign(S, {mode:'play', dist:0, speed:11, slow:1, gap:70, sinceHit:9, pucks:3, kills:0, tokens:0, shake:0, cool:0, banner:2.8, lastD:-1, dying:0, nextRow:20});
   Object.assign(P, {lane:1, x:0, y:0, vy:0, ground:true, jumps:0, slide:0, slideDur:0, slideHold:false, slideQ:false, inv:0, swing:0, phase:0});
-  for (const b of buildings) skin(b);
+  for (const b of buildings) skin(b); inters.forEach(setInter);
   $('title').hidden = true; $('over').hidden = true; $('hud').hidden = false; $('pause').textContent = 'Pause';
 }
 const score = () => Math.floor(S.dist) + S.kills * 25 + S.tokens * 10;
@@ -974,10 +1092,11 @@ function scroll(dz) {
   roadTex.offset.y += dz / 16;
   for (const b of buildings) { b.g.position.z += dz; if (b.g.position.z > 18) { b.g.position.z -= NB * SLOT; b.serial += NB * 2; skin(b); } }
   for (const l of lights) { l.g.position.z += dz; if (l.g.position.z > 14) { l.g.position.z -= 12 * 18; l.serial += 12; const on = l.on = hh(l.serial * 7.1) < 0.8; l.gl.visible = l.pool.visible = l.shaft.visible = on; l.lamp.material = on ? emit(0xffd08a, 7) : bas(0x3a3a3a); } }
-  let n = 0; for (const l of lights.slice().sort((a, b) => b.g.position.z - a.g.position.z)) { const z = l.g.position.z; if (n < 4 && lampsOn && l.on && z < 8 && z > -66) { lamps[n].position.set(l.side * 3.85, 6, z); lamps[n].intensity = 2.2 * clamp((z + 66) / 14, 0, 1); n++; } }
+  let n = 0; for (const l of lights.slice().sort((a, b) => b.g.position.z - a.g.position.z)) { const z = l.g.position.z; if (n < 4 && lampsOn && l.on && z < 8 && z > -66) { lamps[n].position.set(l.side * 3.85, 6, z); lamps[n].intensity = 2.2 * clamp((z + 66) / 14, 0, 1) * (l.serial % 7 === 3 && hh(Math.floor(S.t * 16)) > 0.55 ? 0.2 : 1); n++; } }
   for (; n < 4; n++) lamps[n].intensity = 0;
   for (const l of lights) l.shaft.visible = l.on && l.g.position.z > -80;
-  for (const s of signs) { s.g.position.z += dz; if (s.g.position.z > 12) { s.g.position.z -= 180; s.serial += 4; const d = DISTRICTS[dIndex(S.dist - s.g.position.z)]; s.pl.material = signMat(d, d.streets[s.serial % 3]); } }
+  for (const it of inters) { it.g.position.z += dz; if (it.g.position.z > 14) { it.g.position.z -= 270; it.serial += 3; setInter(it); } }
+  for (const q of props) { q.g.position.z += dz; if (q.g.position.z > 14) { q.g.position.z -= 14 * 15.5; q.serial += 14; q.g.remove(q.g.children[0]); q.g.add(PROPS[Math.floor(hh(q.serial * 3.7) * PROPS.length)].clone()); } }
   for (const g of lanterns) { g.position.z += dz; if (g.position.z > 12) g.position.z -= 180; g.visible = dIndex(S.dist - g.position.z) === 4; }
   stepRain(dz);
 
@@ -1006,6 +1125,9 @@ function update(dt) {
     P.vy -= 19 * dt; P.y += P.vy * dt;
     if (P.y <= 0) { P.y = 0; P.vy = 0; P.ground = true; P.jumps = 0; if (S.t - (P.jumpQ || -9) < 0.18) { P.jumpQ = -9; jump(true); } else if (P.slideQ && P.slideHold) { P.slide = 0.62; P.slideDur = 0; } P.slideQ = false; }
   }
+  if (P.ground && S.t - (P.splashT || 0) > (P.slide > 0 ? 0.07 : 0.15) && inPuddle(P.x, 0)) { P.splashT = S.t; splash(P.x, P.slide > 0 ? -0.6 : 0); }
+  for (const r of ripples) { r.t += dt; r.m.position.z += dz; const k = r.t / 0.55; r.m.scale.setScalar(0.15 + k * 0.9); r.m.material.opacity = 0.7 * (1 - k); if (k >= 1) { scene.remove(r.m); r.m.material.dispose(); } }
+  for (let i = ripples.length - 1; i >= 0; i--) if (ripples[i].t >= 0.55) ripples.splice(i, 1);
   if (P.slide > 0) { P.slide -= dt; P.slideDur += dt; if (P.slide <= 0.08 && P.slideHold && P.slideDur < 1.25) P.slide = 0.08; }
 
   if (S.dist >= S.nextRow) spawnRow();
@@ -1056,6 +1178,11 @@ function render() {
   const d = dIndex(S.dist), f = ((S.dist % DLEN) + DLEN) % DLEN / DLEN, t = clamp((f - 0.9) / 0.1, 0, 1), a = DISTRICTS[d].sky, b = DISTRICTS[(d + 1) % 6].sky;
   fogCol.setRGB(lerp(a[0], b[0], t) / 255, lerp(a[1], b[1], t) / 255, lerp(a[2], b[2], t) / 255).convertSRGBToLinear();
   scene.fog.color.copy(fogCol); skyMat.uniforms.uHorizon.value.copy(fogCol); skyMat.uniforms.uTime.value = S.t; renderer.setClearColor(fogCol);
+  if (!REDUCED && S.mode !== 'paused') { // distant lightning, one soft pulse
+    if (S.t > storm.next) { storm.t = S.t; storm.next = S.t + rnd(16, 34); setTimeout(() => { tone(58, 1.4, 'sawtooth', 0.05, 30); tone(41, 1.8, 'triangle', 0.07, 26); }, 1100); }
+    const e = S.t - storm.t, f = e < 0.6 ? Math.sin(e / 0.6 * Math.PI) * Math.exp(-e * 4) : 0;
+    hemi.intensity = 0.16 + f * 1.5; skyMat.uniforms.uFlash.value = f; }
+  sigMat.color.copy(Math.sin(S.t * 5) > 0 ? SIG_ON : SIG_OFF);
   far.userData.beacon.visible = Math.sin(S.t * 3) > 0; blinkMat.color.copy(Math.sin(S.t * 8) > 0 ? BLINK_ON : BLINK_OFF);
 
   const playing = S.mode !== 'title';
@@ -1143,10 +1270,10 @@ $('mute').addEventListener('click', e => { S.muted = !S.muted; e.currentTarget.t
 document.addEventListener('visibilitychange', () => { if (document.hidden && S.mode === 'play') togglePause(); });
 
 // test hook: lets an automated check read state and jump ahead
-window.__hogtown = {S, P, info: () => { const i = renderer.info.render; return {calls:i.calls, tris:i.triangles}; }, ents: () => ents, reskin: () => buildings.forEach(skin)};
+window.__hogtown = {S, P, inPuddle, info: () => { const i = renderer.info.render; return {calls:i.calls, tris:i.triangles}; }, ents: () => ents, reskin: () => { buildings.forEach(skin); inters.forEach(setInter); }};
 
 resize(); for (const b of buildings) skin(b);
-if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { for (const k in signTex) delete signTex[k]; makeBoards(); buildings.forEach(skin); });
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { for (const k in signTex) delete signTex[k]; for (const k in storeTex) delete storeTex[k]; makeBoards(); buildings.forEach(skin); inters.forEach(setInter); });
 requestAnimationFrame(frame);
 })();
 </script>
