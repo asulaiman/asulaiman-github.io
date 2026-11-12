@@ -138,6 +138,7 @@ button:focus-visible{outline:3px solid var(--sodium);outline-offset:2px}
         <dt>Pick up</dt><dd>Pucks for ammo, a Tim Hortons coffee to pull away, tokens for points.</dd>
       </dl>
       <button class="cta" id="start" type="button">Start running</button>
+      <p style="font-size:12px;color:var(--fog)">Chinatown shopfront photo by Arild Vågen, CC BY-SA 4.0, via Wikimedia Commons.</p>
     </div>
   </div>
 
@@ -570,7 +571,7 @@ function bake(list, geo, mat, plane, gain) {
 }
 const neonMat = new T.MeshBasicMaterial({color:0xffffff});
 const newKit = h => ({box:[], cyl:[], gd:[], l0:[], l1:[], neon:[], single:[], h});
-const finish = B => ({singles:B.single, h:B.h, signs:B.signs || [], shop:!!B.shop, glow:B.glow || 0, inst:[bake(B.neon, BOX, neonMat, false, 3.4), bake(B.box, BOX, trimMat), bake(B.cyl, CYL, trimMat), bake(B.gd, PLANE, winMat, true), bake(B.l0, PLANE, litMats[0], true), bake(B.l1, PLANE, litMats[1], true)].filter(Boolean)});
+const finish = B => ({singles:B.single, h:B.h, signs:B.signs || [], shop:!!B.shop, glow:B.glow || 0, photo:B.photo || null, inst:[bake(B.neon, BOX, neonMat, false, 3.4), bake(B.box, BOX, trimMat), bake(B.cyl, CYL, trimMat), bake(B.gd, PLANE, winMat, true), bake(B.l0, PLANE, litMats[0], true), bake(B.l1, PLANE, litMats[1], true)].filter(Boolean)});
 function instKit(k) {
   const g = new T.Group();
   for (const q of k.singles) { const m = new T.Mesh(q.geo, q.mat); m.position.fromArray(q.p); if (q.s) m.scale.fromArray(q.s); g.add(m); }
@@ -621,6 +622,19 @@ function masonry(o) {
     if (o.shop && o.shop.awning) for (let i = 0; i < 3; i++) B.neon.push([-1.74, 2.86, -W / 2 + (i + 0.5) * W / 3, 0.04, 0.04, W / 3 - 0.5, na]); }
   else if (o.shop) B.glow = 0xffc890;
   if (o.tank) { B.cyl.push([4, o.H + 2.6, 2, 1.35, 2.4, 1.35, 0x4a3a2c], [4, o.H + 3.95, 2, 1.5, 0.3, 1.5, 0x2a2420]); for (const dx of [-0.9, 0.9]) for (const dz of [-0.9, 0.9]) B.box.push([4 + dx, o.H + 0.7, 2 + dz, 0.12, 1.4, 0.12, 0x2a2420]); }
+  return finish(B);
+}
+// a building fronted with a real photograph of Chinatown shopfronts on Dundas St W (see img/CREDITS.md)
+const photoTex = n => { const t = new T.TextureLoader().load('img/' + n); t.encoding = T.sRGBEncoding; t.anisotropy = 8; return t; };
+const photoMat = new T.MeshStandardMaterial({map:photoTex('chinatown-a.jpg'), emissiveMap:photoTex('chinatown-a-glow.jpg'), emissive:new T.Color(1.7, 1.7, 1.7), roughness:0.82, envMapIntensity:0.5});
+function photoFront() {
+  const B = newKit(9.4), W = BW, sb = W / 3;
+  B.single.push({geo:ubox(BD, 9.4, W), mat:brickB, p:[BD / 2, 4.7, 0]});
+  for (let i = 0; i <= 3; i++) B.box.push([-0.12, 1.1, clamp(-W / 2 + i * sb, -W / 2 + 0.26, W / 2 - 0.26), 0.36, 2.2, 0.5, 0x5a2a24]);
+  for (let i = 0; i < 3; i++) { const z = -W / 2 + (i + 0.5) * sb; glassAt(B, 0.02, 1.2, z, sb - 0.6, 1.9, 0.8); B.box.push([-0.04, 0.14, z, 0.16, 0.28, sb - 0.5, 0x1c1e24]); }
+  B.box.push([-0.3, 9.02, 0, 0.9, 0.3, W + 0.5, 0x8a8070], [-0.42, 9.3, 0, 1.2, 0.2, W + 0.8, 0x8a8070], [-0.1, 8.3, 0, 0.3, 1.2, W, 0x6a3a30]);
+  B.neon.push([-0.66, 9.12, 0, 0.05, 0.05, W + 0.8, 0xff3a30]); for (const k of [-1, 1]) B.neon.push([-0.12, 4.9, k * (W / 2 + 0.02), 0.05, 5.5, 0.05, 0x30ffb0]);
+  B.photo = {x:-0.07, y:4.9, w:W, h:5.45}; B.shop = true; B.glow = 0xff5a40;
   return finish(B);
 }
 function tower(o) {
@@ -683,7 +697,7 @@ const KITS = [
   [() => tower({H:78, mat:facade('#0f1724', '#1d2940', '#aad2f0', 9, 30, 0.12), base:stoneW, fin:0x8d97a6}), () => tower({H:58, mat:facade('#161b24', '#1d2940', '#aad2f0', 8, 24, 0.1), base:darkPanel, fin:0x3a4250}), () => tower({H:66, mat:facade('#33260f', '#6b5220', '#f0be50', 9, 26, 0.3), base:stoneW, fin:0x6a5430})],
   [() => masonry({H:24, bays:5, floorH:3.4, wall:brickB, trim:0x8a8478, frame:0x1c1e22, lit:0.24, cornice:true, escape:true, tank:true}), () => masonry({H:32, bays:4, floorH:3.6, wall:conc, trim:0x5d6068, frame:0x1c1e22, lit:0.2, ribbon:true}), () => masonry({H:19, bays:5, floorH:3.5, wall:stoneW, trim:0x9a9488, frame:0x26282c, lit:0.25, pil:true, cornice:true, shop:{sign:0x23262e, awning:0x2f4a3a}, neon:[0xff5a30, 0]})],
   [() => masonry({H:30, bays:4, floorH:3.6, wall:darkPanel, trim:0x565e6c, frame:0x9aa2b0, lit:0.3, ribbon:true, shop:{sign:0x14161c}, neon:[0xff40c0, 0x40d0ff]}), () => masonry({H:24, bays:5, floorH:3.5, wall:conc, trim:0x5d6068, frame:0x1c1e22, lit:0.28, ribbon:true, shop:{sign:0x7a1f6a}, neon:[0x40d0ff, 0xff40c0]}), () => masonry({H:38, bays:5, floorH:3.6, wall:darkPanel, trim:0x4a5260, frame:0x9aa2b0, lit:0.26, ribbon:true, shop:{sign:0x14161c}, neon:[0xff40c0, 0x40d0ff]})],
-  [() => masonry({H:10.4, bays:4, floorH:3.0, wall:brickR, trim:0x8a8070, frame:0x2a1c18, lit:0.4, cornice:true, shop:{sign:0xc4281c, awning:0xa8201a}, neon:[0xff3a30, 0x30ffb0]}), () => masonry({H:13.4, bays:4, floorH:3.0, wall:brickB, trim:0x8a8070, frame:0x2a1c18, lit:0.36, cornice:true, escape:true, shop:{sign:0xd6a42a, awning:0xb88a1c}, neon:[0xffb030, 0xff3a30]}), () => masonry({H:10.4, bays:3, floorH:3.0, wall:brickR, trim:0x8a8070, frame:0xe0d8c8, lit:0.4, cornice:true, tank:true, shop:{sign:0x1f6b4a, awning:0xa8201a}, neon:[0x30ffb0, 0xff3a30]})],
+  [() => masonry({H:10.4, bays:4, floorH:3.0, wall:brickR, trim:0x8a8070, frame:0x2a1c18, lit:0.4, cornice:true, shop:{sign:0xc4281c, awning:0xa8201a}, neon:[0xff3a30, 0x30ffb0]}), () => masonry({H:13.4, bays:4, floorH:3.0, wall:brickB, trim:0x8a8070, frame:0x2a1c18, lit:0.36, cornice:true, escape:true, shop:{sign:0xd6a42a, awning:0xb88a1c}, neon:[0xffb030, 0xff3a30]}), () => masonry({H:10.4, bays:3, floorH:3.0, wall:brickR, trim:0x8a8070, frame:0xe0d8c8, lit:0.4, cornice:true, tank:true, shop:{sign:0x1f6b4a, awning:0xa8201a}, neon:[0x30ffb0, 0xff3a30]}), photoFront],
   [() => houses([0x8f4456, 0x347c82]), () => houses([0xbc8834, 0x56689c]), () => houses([0x64883e, 0xa8563a]), () => houses([0x4a6e9a, 0xc2b08a])],
 ].map(list => list.map(f => f()));
 // storefront names, lettered in each shop's familiar colours
@@ -731,8 +745,8 @@ const spillMat = new T.MeshBasicMaterial({map:glowTex, color:C(0xffdcae), blendi
 const NB = 15, buildings = [], cabMat = gloss(0x1c1e24);
 for (let i = 0; i < NB * 2; i++) {
   const g = new T.Group(), side = i % 2 ? 1 : -1, pl = () => new T.Mesh(PLANE, BILL[0]), bx = () => new T.Mesh(BOX, cabMat);
-  const b = {g, side, serial:i, kit:null, bill:pl(), blade:pl(), bladeBox:bx(), arm:bx(), open:new T.Mesh(PLANE, openMat), signs:[pl(), pl(), pl()], cabs:[bx(), bx(), bx()], spill:new T.Mesh(PLANE, spillMat), halo:new T.Sprite(new T.SpriteMaterial({map:glowTex, blending:T.AdditiveBlending, depthWrite:false, transparent:true, opacity:0.2}))};
-  g.add(b.halo);
+  const b = {g, side, serial:i, kit:null, bill:pl(), blade:pl(), bladeBox:bx(), arm:bx(), open:new T.Mesh(PLANE, openMat), signs:[pl(), pl(), pl()], cabs:[bx(), bx(), bx()], spill:new T.Mesh(PLANE, spillMat), photo:new T.Mesh(PLANE, photoMat), halo:new T.Sprite(new T.SpriteMaterial({map:glowTex, blending:T.AdditiveBlending, depthWrite:false, transparent:true, opacity:0.2}))};
+  g.add(b.halo, b.photo); b.photo.rotation.y = -side * Math.PI / 2;
   g.add(b.bill, b.blade, b.bladeBox, b.arm, b.open, b.spill, ...b.signs, ...b.cabs);
   for (const sg of b.signs.concat(b.open)) sg.rotation.y = -side * Math.PI / 2;
   b.open.scale.set(0.95, 0.47, 1);
@@ -756,6 +770,7 @@ function skin(b) {
   if (proj) { const y = kit.shop ? 4.8 : 4.05, x = b.side * (kx - 1.55), z = SLOT * 0.28; b.blade.material = storeMat(first, false); b.blade.scale.set(2.3, 0.43, 1); b.blade.position.set(x, y, z + 0.085);
     b.bladeBox.scale.set(2.42, 0.55, 0.16); b.bladeBox.position.set(x, y, z); b.arm.scale.set(1.7, 0.06, 0.06); b.arm.position.set(b.side * (kx - 0.8), y + 0.31, z); }
   b.open.visible = shown && kit.shop && hh(b.serial * 5.3) > 0.3; if (b.open.visible) b.open.position.set(b.side * (kx - 0.09), 2.55, -SLOT / 3 + 1.0);
+  b.photo.visible = shown && !!kit.photo; if (b.photo.visible) { b.photo.scale.set(kit.photo.w, kit.photo.h, 1); b.photo.position.set(b.side * (kx + kit.photo.x), kit.photo.y, 0); }
   b.spill.visible = shown && kit.shop;
   b.halo.visible = shown && !!kit.glow; if (b.halo.visible) { const hh2 = Math.min(kit.h, 13); b.halo.material.color.copy(C(kit.glow)); b.halo.position.set(b.side * (kx - 1.6), hh2 * 0.5, 0); b.halo.scale.set(17, hh2 * 1.7, 1); }
   b.bill.visible = shown && d === 3 && r > 0.3; if (b.bill.visible) b.bill.material = BILL[b.serial % 4];
