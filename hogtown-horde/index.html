@@ -135,10 +135,11 @@ button:focus-visible{outline:3px solid var(--sodium);outline-offset:2px}
         <dt>Jump</dt><dd>Space or Up. Press again in the air for extra height.</dd>
         <dt>Slide</dt><dd>Down or S, to get under scaffolding.</dd>
         <dt>Shoot</dt><dd>F or X. Slapshots a puck down your lane. Tap on a phone.</dd>
+        <dt>Watch for</dt><dd>Coyotes (jump or shoot), cyclists crossing (switch lanes), and a few famous zombies a puck only stuns.</dd>
         <dt>Pick up</dt><dd>Pucks for ammo, a Tim Hortons coffee to pull away, tokens for points.</dd>
       </dl>
       <button class="cta" id="start" type="button">Start running</button>
-      <p style="font-size:12px;color:var(--fog)">Chinatown shopfront photo by Arild Vågen, CC BY-SA 4.0, via Wikimedia Commons.</p>
+      <p style="font-size:12px;color:var(--fog)">Building photos by Arild Vågen, Qviri and Dillan Payne, CC BY-SA 4.0, via Wikimedia Commons.</p>
     </div>
   </div>
 
@@ -571,7 +572,7 @@ function bake(list, geo, mat, plane, gain) {
 }
 const neonMat = new T.MeshBasicMaterial({color:0xffffff});
 const newKit = h => ({box:[], cyl:[], gd:[], l0:[], l1:[], neon:[], single:[], h});
-const finish = B => ({singles:B.single, h:B.h, signs:B.signs || [], shop:!!B.shop, glow:B.glow || 0, photo:B.photo || null, inst:[bake(B.neon, BOX, neonMat, false, 3.4), bake(B.box, BOX, trimMat), bake(B.cyl, CYL, trimMat), bake(B.gd, PLANE, winMat, true), bake(B.l0, PLANE, litMats[0], true), bake(B.l1, PLANE, litMats[1], true)].filter(Boolean)});
+const finish = B => ({singles:B.single, h:B.h, signs:B.signs || [], shop:!!B.shop, glow:B.glow || 0, photos:B.photos || [], inst:[bake(B.neon, BOX, neonMat, false, 3.4), bake(B.box, BOX, trimMat), bake(B.cyl, CYL, trimMat), bake(B.gd, PLANE, winMat, true), bake(B.l0, PLANE, litMats[0], true), bake(B.l1, PLANE, litMats[1], true)].filter(Boolean)});
 function instKit(k) {
   const g = new T.Group();
   for (const q of k.singles) { const m = new T.Mesh(q.geo, q.mat); m.position.fromArray(q.p); if (q.s) m.scale.fromArray(q.s); g.add(m); }
@@ -626,15 +627,16 @@ function masonry(o) {
 }
 // a building fronted with a real photograph of Chinatown shopfronts on Dundas St W (see img/CREDITS.md)
 const photoTex = n => { const t = new T.TextureLoader().load('img/' + n); t.encoding = T.sRGBEncoding; t.anisotropy = 8; return t; };
-const photoMat = new T.MeshStandardMaterial({map:photoTex('chinatown-a.jpg'), emissiveMap:photoTex('chinatown-a-glow.jpg'), emissive:new T.Color(1.7, 1.7, 1.7), roughness:0.82, envMapIntensity:0.5});
-function photoFront() {
-  const B = newKit(9.4), W = BW, sb = W / 3;
-  B.single.push({geo:ubox(BD, 9.4, W), mat:brickB, p:[BD / 2, 4.7, 0]});
-  for (let i = 0; i <= 3; i++) B.box.push([-0.12, 1.1, clamp(-W / 2 + i * sb, -W / 2 + 0.26, W / 2 - 0.26), 0.36, 2.2, 0.5, 0x5a2a24]);
-  for (let i = 0; i < 3; i++) { const z = -W / 2 + (i + 0.5) * sb; glassAt(B, 0.02, 1.2, z, sb - 0.6, 1.9, 0.8); B.box.push([-0.04, 0.14, z, 0.16, 0.28, sb - 0.5, 0x1c1e24]); }
-  B.box.push([-0.3, 9.02, 0, 0.9, 0.3, W + 0.5, 0x8a8070], [-0.42, 9.3, 0, 1.2, 0.2, W + 0.8, 0x8a8070], [-0.1, 8.3, 0, 0.3, 1.2, W, 0x6a3a30]);
-  B.neon.push([-0.66, 9.12, 0, 0.05, 0.05, W + 0.8, 0xff3a30]); for (const k of [-1, 1]) B.neon.push([-0.12, 4.9, k * (W / 2 + 0.02), 0.05, 5.5, 0.05, 0x30ffb0]);
-  B.photo = {x:-0.07, y:4.9, w:W, h:5.45}; B.shop = true; B.glow = 0xff5a40;
+const photoMats = {};
+const photoMatFor = (name, glow, gain) => photoMats[name] || (photoMats[name] = new T.MeshStandardMaterial({color:new T.Color(1.55, 1.55, 1.55), map:photoTex(name + '.jpg'), emissiveMap:glow ? photoTex(name + '-glow.jpg') : null, emissive:glow ? new T.Color(gain, gain, gain) : new T.Color(0, 0, 0), roughness:0.82, envMapIntensity:0.5}));
+function photoFront(o) { // o.panels: [{img, glow, w, h, z}] in metres, bottom edge at o.y0
+  const B = newKit(o.H), W = BW, sb = W / 3, y0 = o.y0 || 0.02;
+  B.single.push({geo:ubox(BD, o.H, W), mat:o.wall, p:[BD / 2, o.H / 2, 0]});
+  if (o.base) { for (let i = 0; i <= 3; i++) B.box.push([-0.12, y0 / 2, clamp(-W / 2 + i * sb, -W / 2 + 0.26, W / 2 - 0.26), 0.36, y0, 0.5, o.pier || 0x5a2a24]);
+    for (let i = 0; i < 3; i++) { const z = -W / 2 + (i + 0.5) * sb; glassAt(B, 0.02, y0 / 2 + 0.1, z, sb - 0.6, y0 - 0.3, 0.8); B.box.push([-0.04, 0.14, z, 0.16, 0.28, sb - 0.5, 0x1c1e24]); } }
+  B.box.push([-0.3, o.H - 0.38, 0, 0.9, 0.3, W + 0.5, o.trim || 0x8a8070], [-0.42, o.H - 0.1, 0, 1.2, 0.2, W + 0.8, o.trim || 0x8a8070]);
+  if (o.neon) { B.neon.push([-0.66, o.H - 0.28, 0, 0.05, 0.05, W + 0.8, o.neon[0]]); if (o.neon[1]) for (const k of [-1, 1]) B.neon.push([-0.12, o.H / 2, k * (W / 2 + 0.02), 0.05, o.H - 3, 0.05, o.neon[1]]); }
+  B.photos = o.panels.map(q => ({mat:photoMatFor(q.img, q.glow, q.gain || 1.7), x:-0.07, y:y0 + q.h / 2, w:q.w, h:q.h, z:q.z || 0})); B.shop = true; B.glow = o.glowCol || 0xffc890;
   return finish(B);
 }
 function tower(o) {
@@ -695,9 +697,11 @@ const stoneW = wallMat('stone'), brickR = wallMat('brickRed'), brickB = wallMat(
 const KITS = [
   [colonnade, () => masonry({H:22, bays:5, floorH:3.7, wall:stoneW, trim:0x9a9488, frame:0x26282c, lit:0.22, pil:true, cornice:true}), () => masonry({H:28, bays:6, floorH:3.5, wall:paleStone, trim:0x8a8478, frame:0x26282c, lit:0.2, pil:true, cornice:true, tank:true})],
   [() => tower({H:78, mat:facade('#0f1724', '#1d2940', '#aad2f0', 9, 30, 0.12), base:stoneW, fin:0x8d97a6}), () => tower({H:58, mat:facade('#161b24', '#1d2940', '#aad2f0', 8, 24, 0.1), base:darkPanel, fin:0x3a4250}), () => tower({H:66, mat:facade('#33260f', '#6b5220', '#f0be50', 9, 26, 0.3), base:stoneW, fin:0x6a5430})],
-  [() => masonry({H:24, bays:5, floorH:3.4, wall:brickB, trim:0x8a8478, frame:0x1c1e22, lit:0.24, cornice:true, escape:true, tank:true}), () => masonry({H:32, bays:4, floorH:3.6, wall:conc, trim:0x5d6068, frame:0x1c1e22, lit:0.2, ribbon:true}), () => masonry({H:19, bays:5, floorH:3.5, wall:stoneW, trim:0x9a9488, frame:0x26282c, lit:0.25, pil:true, cornice:true, shop:{sign:0x23262e, awning:0x2f4a3a}, neon:[0xff5a30, 0]})],
+  [() => masonry({H:24, bays:5, floorH:3.4, wall:brickB, trim:0x8a8478, frame:0x1c1e22, lit:0.24, cornice:true, escape:true, tank:true}), () => masonry({H:32, bays:4, floorH:3.6, wall:conc, trim:0x5d6068, frame:0x1c1e22, lit:0.2, ribbon:true}), () => masonry({H:19, bays:5, floorH:3.5, wall:stoneW, trim:0x9a9488, frame:0x26282c, lit:0.25, pil:true, cornice:true, shop:{sign:0x23262e, awning:0x2f4a3a}, neon:[0xff5a30, 0]}),
+   () => photoFront({H:12.7, wall:brickR, panels:[{img:'queen-steves', glow:true, w:9.55, h:12.2}]}), () => photoFront({H:13.4, wall:brickB, panels:[{img:'queen-neon', glow:true, w:6.35, h:9.85, z:-3.4}, {img:'queen-mural', w:6.8, h:13.0, z:3.18}]}),
+   () => photoFront({H:10.5, y0:3.0, base:true, pier:0x15171c, wall:wallMat('clap', 0x3a322c), trim:0x2a2622, panels:[{img:'queen-horseshoe', glow:true, w:7.15, h:7.1}]})],
   [() => masonry({H:30, bays:4, floorH:3.6, wall:darkPanel, trim:0x565e6c, frame:0x9aa2b0, lit:0.3, ribbon:true, shop:{sign:0x14161c}, neon:[0xff40c0, 0x40d0ff]}), () => masonry({H:24, bays:5, floorH:3.5, wall:conc, trim:0x5d6068, frame:0x1c1e22, lit:0.28, ribbon:true, shop:{sign:0x7a1f6a}, neon:[0x40d0ff, 0xff40c0]}), () => masonry({H:38, bays:5, floorH:3.6, wall:darkPanel, trim:0x4a5260, frame:0x9aa2b0, lit:0.26, ribbon:true, shop:{sign:0x14161c}, neon:[0xff40c0, 0x40d0ff]})],
-  [() => masonry({H:10.4, bays:4, floorH:3.0, wall:brickR, trim:0x8a8070, frame:0x2a1c18, lit:0.4, cornice:true, shop:{sign:0xc4281c, awning:0xa8201a}, neon:[0xff3a30, 0x30ffb0]}), () => masonry({H:13.4, bays:4, floorH:3.0, wall:brickB, trim:0x8a8070, frame:0x2a1c18, lit:0.36, cornice:true, escape:true, shop:{sign:0xd6a42a, awning:0xb88a1c}, neon:[0xffb030, 0xff3a30]}), () => masonry({H:10.4, bays:3, floorH:3.0, wall:brickR, trim:0x8a8070, frame:0xe0d8c8, lit:0.4, cornice:true, tank:true, shop:{sign:0x1f6b4a, awning:0xa8201a}, neon:[0x30ffb0, 0xff3a30]}), photoFront],
+  [() => masonry({H:10.4, bays:4, floorH:3.0, wall:brickR, trim:0x8a8070, frame:0x2a1c18, lit:0.4, cornice:true, shop:{sign:0xc4281c, awning:0xa8201a}, neon:[0xff3a30, 0x30ffb0]}), () => masonry({H:13.4, bays:4, floorH:3.0, wall:brickB, trim:0x8a8070, frame:0x2a1c18, lit:0.36, cornice:true, escape:true, shop:{sign:0xd6a42a, awning:0xb88a1c}, neon:[0xffb030, 0xff3a30]}), () => masonry({H:10.4, bays:3, floorH:3.0, wall:brickR, trim:0x8a8070, frame:0xe0d8c8, lit:0.4, cornice:true, tank:true, shop:{sign:0x1f6b4a, awning:0xa8201a}, neon:[0x30ffb0, 0xff3a30]}), () => photoFront({H:9.4, y0:2.18, base:true, wall:brickB, neon:[0xff3a30, 0x30ffb0], glowCol:0xff5a40, panels:[{img:'chinatown-a', glow:true, w:BW, h:5.45}]})],
   [() => houses([0x8f4456, 0x347c82]), () => houses([0xbc8834, 0x56689c]), () => houses([0x64883e, 0xa8563a]), () => houses([0x4a6e9a, 0xc2b08a])],
 ].map(list => list.map(f => f()));
 // storefront names, lettered in each shop's familiar colours
@@ -745,8 +749,8 @@ const spillMat = new T.MeshBasicMaterial({map:glowTex, color:C(0xffdcae), blendi
 const NB = 15, buildings = [], cabMat = gloss(0x1c1e24);
 for (let i = 0; i < NB * 2; i++) {
   const g = new T.Group(), side = i % 2 ? 1 : -1, pl = () => new T.Mesh(PLANE, BILL[0]), bx = () => new T.Mesh(BOX, cabMat);
-  const b = {g, side, serial:i, kit:null, bill:pl(), blade:pl(), bladeBox:bx(), arm:bx(), open:new T.Mesh(PLANE, openMat), signs:[pl(), pl(), pl()], cabs:[bx(), bx(), bx()], spill:new T.Mesh(PLANE, spillMat), photo:new T.Mesh(PLANE, photoMat), halo:new T.Sprite(new T.SpriteMaterial({map:glowTex, blending:T.AdditiveBlending, depthWrite:false, transparent:true, opacity:0.2}))};
-  g.add(b.halo, b.photo); b.photo.rotation.y = -side * Math.PI / 2;
+  const b = {g, side, serial:i, kit:null, bill:pl(), blade:pl(), bladeBox:bx(), arm:bx(), open:new T.Mesh(PLANE, openMat), signs:[pl(), pl(), pl()], cabs:[bx(), bx(), bx()], spill:new T.Mesh(PLANE, spillMat), photos:[pl(), pl()], halo:new T.Sprite(new T.SpriteMaterial({map:glowTex, blending:T.AdditiveBlending, depthWrite:false, transparent:true, opacity:0.2}))};
+  g.add(b.halo, ...b.photos); for (const ph of b.photos) ph.rotation.y = -side * Math.PI / 2;
   g.add(b.bill, b.blade, b.bladeBox, b.arm, b.open, b.spill, ...b.signs, ...b.cabs);
   for (const sg of b.signs.concat(b.open)) sg.rotation.y = -side * Math.PI / 2;
   b.open.scale.set(0.95, 0.47, 1);
@@ -770,7 +774,7 @@ function skin(b) {
   if (proj) { const y = kit.shop ? 4.8 : 4.05, x = b.side * (kx - 1.55), z = SLOT * 0.28; b.blade.material = storeMat(first, false); b.blade.scale.set(2.3, 0.43, 1); b.blade.position.set(x, y, z + 0.085);
     b.bladeBox.scale.set(2.42, 0.55, 0.16); b.bladeBox.position.set(x, y, z); b.arm.scale.set(1.7, 0.06, 0.06); b.arm.position.set(b.side * (kx - 0.8), y + 0.31, z); }
   b.open.visible = shown && kit.shop && hh(b.serial * 5.3) > 0.3; if (b.open.visible) b.open.position.set(b.side * (kx - 0.09), 2.55, -SLOT / 3 + 1.0);
-  b.photo.visible = shown && !!kit.photo; if (b.photo.visible) { b.photo.scale.set(kit.photo.w, kit.photo.h, 1); b.photo.position.set(b.side * (kx + kit.photo.x), kit.photo.y, 0); }
+  b.photos.forEach((ph, i) => { const q = kit.photos[i]; ph.visible = shown && !!q; if (ph.visible) { ph.material = q.mat; ph.scale.set(q.w, q.h, 1); ph.position.set(b.side * (kx + q.x), q.y, b.side * q.z); } });
   b.spill.visible = shown && kit.shop;
   b.halo.visible = shown && !!kit.glow; if (b.halo.visible) { const hh2 = Math.min(kit.h, 13); b.halo.material.color.copy(C(kit.glow)); b.halo.position.set(b.side * (kx - 1.6), hh2 * 0.5, 0); b.halo.scale.set(17, hh2 * 1.7, 1); }
   b.bill.visible = shown && d === 3 && r > 0.3; if (b.bill.visible) b.bill.material = BILL[b.serial % 4];
@@ -951,7 +955,7 @@ function person(o) {
   const legL = leg(-0.092), legR = leg(0.092);
   part(body, 'pelvis', legs, 0, 0.93, 0);
   const spine = new T.Group(); spine.position.y = 1.12; body.add(spine);
-  part(spine, z ? 'chest' : 'jacket', top); part(spine, 'neck', skin);
+  part(spine, z && o.who !== 'drake' ? 'chest' : 'jacket', top); part(spine, 'neck', skin);
   const arm = x => { const sh = new T.Group(); sh.position.set(x, 0.345, 0); part(sh, z ? 'armU' : 'sleeveU', top);
     const k = new T.Group(); k.position.y = -0.29; if (z) part(k, 'armL', skin); else { part(k, 'sleeveL', top); part(k, 'hand', lam(0x1c1e24)); }
     sh.add(k); sh.userData = {k}; spine.add(sh); return sh; };
@@ -959,22 +963,29 @@ function person(o) {
   const head = new T.Group(); head.position.y = 0.63; spine.add(head);
   const hm = new T.Mesh(headGeo(z), skin); hm.scale.set(0.098, 0.122, 0.112); head.add(hm);
   for (const k of [-1, 1]) { sph(head, 0.016, 0.03, 0.02, skin, k * 0.096, 0, 0.01); sph(head, 0.014, 0.014, 0.012, z ? emit(0xd8f0b0, 3.2) : lam(0x1a1410), k * 0.035, 0.012, -0.086); }
-  if (z) { sph(head, 0.03, 0.016, 0.014, lam(0x120808), 0, -0.062, -0.088); if (o.bald !== true && hh(o.top + o.skin) > 0.3) sph(head, 0.101, 0.118, 0.116, lam(HAIR[Math.floor(hh(o.top) * 4)]), 0, 0.02, 0.012, HEMI);
+  if (z) { sph(head, 0.03, 0.016, 0.014, lam(0x120808), 0, -0.062, -0.088); if (o.bald !== true && !o.who && hh(o.top + o.skin) > 0.3) sph(head, 0.101, 0.118, 0.116, lam(HAIR[Math.floor(hh(o.top) * 4)]), 0, 0.02, 0.012, HEMI);
     if (o.tie) cap(spine, 0.022, 0.32, 0xb3261c, 0, 0.2, -0.15); }
   else {
-    sph(head, 0.106, 0.128, 0.118, cloth(0xc9261c), 0, 0.03, 0.008, HEMI); cyl(head, 0.108, 0.05, cloth(0xe8e2d4), 0, 0.045, 0.008).scale.z = 0.118; sph(head, 0.036, 0.036, 0.036, cloth(0xe8e2d4), 0, 0.17, 0.008);
+    if (o.civ) sph(head, 0.114, 0.1, 0.128, gloss(o.helmet || 0xe8e8e4), 0, 0.05, 0, HEMI); else { sph(head, 0.106, 0.128, 0.118, cloth(0xc9261c), 0, 0.03, 0.008, HEMI); cyl(head, 0.108, 0.05, cloth(0xe8e2d4), 0, 0.045, 0.008).scale.z = 0.118; sph(head, 0.036, 0.036, 0.036, cloth(0xe8e2d4), 0, 0.17, 0.008); }
     sph(spine, 0.14, 0.085, 0.085, top, 0, 0.44, 0.075); // hood bunched at the neck
-    const pk = cloth(0x2c3a56); rbox(spine, 0.34, 0.46, 0.17, 0.09, pk, 0, 0.16, 0.235); rbox(spine, 0.25, 0.17, 0.07, 0.05, pk, 0, 0.06, 0.335);
+    if (!o.civ) { const pk = cloth(0x2c3a56); rbox(spine, 0.34, 0.46, 0.17, 0.09, pk, 0, 0.16, 0.235); rbox(spine, 0.25, 0.17, 0.07, 0.05, pk, 0, 0.06, 0.335);
     for (const k of [-1, 1]) box(spine, 0.045, 0.34, 0.03, pk, k * 0.11, 0.25, -0.15);
-    const stick = new T.Group(); stick.position.set(0, -0.34, 0); cyl(stick, 0.016, 1.3, 0xd9c9a0, 0, -0.55, 0); rbox(stick, 0.05, 0.09, 0.34, 0.03, 0xd9c9a0, 0, -1.2, -0.15); stick.rotation.x = -0.95; armR.userData.k.add(stick);
+    const stick = new T.Group(); stick.position.set(0, -0.34, 0); cyl(stick, 0.016, 1.3, 0xd9c9a0, 0, -0.55, 0); rbox(stick, 0.05, 0.09, 0.34, 0.03, 0xd9c9a0, 0, -1.2, -0.15); stick.rotation.x = -0.95; armR.userData.k.add(stick); }
   }
-  if (z) g.scale.setScalar(0.95 + hh(o.top * 1.7 + o.skin) * 0.13);
+  if (z && o.who === 'ford') { sph(head, 0.103, 0.1, 0.116, lam(0xd9c27a), 0, 0.035, 0.012, HEMI); sph(head, 0.1, 0.07, 0.1, skin, 0, -0.075, -0.012); g.scale.set(1.5, 1.03, 1.45); }
+  else if (z && o.who === 'drake') { const hr = lam(0x14100c); sph(head, 0.1, 0.085, 0.114, hr, 0, 0.05, 0.012, HEMI); sph(head, 0.086, 0.062, 0.085, hr, 0, -0.075, -0.03);
+    const ch = new T.Mesh(torusGeo, gloss(0xd9b040)); ch.rotation.z = Math.PI / 2; ch.scale.setScalar(0.56); ch.position.set(0, 0.37, -0.03); spine.add(ch); g.scale.setScalar(1.04); }
+  else if (z && o.who === 'chow') { const hr = lam(0x0e0c0c); sph(head, 0.11, 0.128, 0.122, hr, 0, 0.012, 0.016, HEMI); sph(head, 0.113, 0.1, 0.085, hr, 0, -0.04, 0.05);
+    for (const k of [-1, 1]) { const gl = new T.Mesh(torusGeo, lam(0x15171c)); gl.rotation.y = Math.PI / 2; gl.scale.setScalar(0.125); gl.position.set(k * 0.036, 0.012, -0.1); head.add(gl); } g.scale.setScalar(0.9); }
+  else if (z) g.scale.setScalar(0.95 + hh(o.top * 1.7 + o.skin) * 0.13);
   g.userData = {body, spine, head, legL, legR, armL, armR, zombie:z};
   return g;
 }
 function pose(g, phase, o) {
   const u = g.userData, a = Math.sin(phase), c = Math.cos(phase), L = u.legL, Rg = u.legR, AL = u.armL, AR = u.armR; o = o || {};
   const set = (hip, hx, kx, fx) => { hip.rotation.x = hx; hip.userData.k.rotation.x = kx; hip.userData.f.rotation.x = fx || 0; };
+  if (o.ride) { u.body.rotation.set(-0.5, 0, 0); u.body.position.set(0, 0.16, 0.12); u.spine.rotation.set(-0.25, 0, 0); u.head.rotation.set(0.6, 0, 0);
+    set(L, 1.25 + a * 0.5, -(1.5 - a * 0.55), 0.3); set(Rg, 1.25 - a * 0.5, -(1.5 + a * 0.55), 0.3); AL.rotation.set(1.15, 0, 0.1); AR.rotation.set(1.15, 0, -0.1); AL.userData.k.rotation.x = AR.userData.k.rotation.x = 0.2; return; }
   if (o.slide) { u.body.rotation.set(1.15, 0, 0); u.body.position.set(0, 0.14, -0.7); u.spine.rotation.set(-0.45, 0, 0); u.head.rotation.set(-0.3, 0, 0); set(L, 0.35, -0.6); set(Rg, -0.1, -0.1);
     AL.rotation.set(-0.7, 0, 0); AR.rotation.set(-0.5, 0, 0); AL.userData.k.rotation.x = AR.userData.k.rotation.x = 0.5; return; }
   if (u.zombie) {
@@ -1045,7 +1056,10 @@ function build(type, o) {
       for (const dx of [-4.9, 4.9]) for (const y of [1.36, 2.9, 4.4]) cyl(g, 0.04, 1.2, pipe, dx, y, 0).rotation.x = Math.PI / 2;
       for (const dz of [-0.48, 0, 0.48]) box(g, 10.4, 0.07, 0.44, 0x8a6a3a, 0, 3.0, dz);
       const br = cyl(g, 0.035, 10.3, pipe, 0, 3.65, 0.6); br.rotation.z = 1.42; const b2 = cyl(g, 0.035, 10.3, pipe, 0, 3.65, -0.6); b2.rotation.z = -1.42; break; }
-    case 'zombie': { const z = person({zombie:true, skin:o.fast ? 0xa9b878 : 0x8a9c74, top:o.top, legs:0x2b2f3a, tie:o.tie}); z.rotation.y = Math.PI; g.add(z); g.userData.z = z; break; }
+    case 'zombie': { const w = o.who && WHO[o.who], z = person({zombie:true, who:o.who, skin:w ? w.skin : o.fast ? 0xa9b878 : 0x8a9c74, top:w ? w.top : o.top, legs:w ? w.legs : 0x2b2f3a, tie:o.tie || o.who === 'ford'}); z.rotation.y = Math.PI; g.add(z); g.userData.z = z;
+      if (w) { const tg = nameTag(w.name); tg.position.y = o.who === 'chow' ? 2.15 : 2.4; g.add(tg); } break; }
+    case 'coyote': buildCoyote(g); g.rotation.y = Math.PI; break;
+    case 'cyclist': buildCyclist(g, o); g.rotation.y = o.dir > 0 ? -Math.PI / 2 : Math.PI / 2; break;
     case 'token': { const c = cyl(g, 0.26, 0.06, emit(0xe8b93a, 1.8), 0, 0, 0); c.rotation.x = Math.PI / 2; const i = cyl(g, 0.12, 0.07, bas(0x9a7418), 0, 0, 0); i.rotation.x = Math.PI / 2; break; }
     case 'puck': cyl(g, 0.3, 0.16, 0x0b0d12, 0, 0, 0); cyl(g, 0.3, 0.02, 0x4a505c, 0, 0.09, 0); glow(g, 0xffb347, 2.2, 0, 0, 0, 0.6); break;
     case 'coffee': { // a Tim Hortons cup
@@ -1101,9 +1115,36 @@ function buildCar(g, o) {
     rbox(g, 1.15, 0.1, 0.32, 0.06, dk, 0, top + 0.06, st[5][0] + 0.15); rbox(g, 0.5, 0.11, 0.26, 0.06, polA, -0.3, top + 0.11, st[5][0] + 0.15); rbox(g, 0.5, 0.11, 0.26, 0.06, polB, 0.3, top + 0.11, st[5][0] + 0.15); glow(g, 0xff4040, 2.4, -0.3, top + 0.2, st[5][0] + 0.15, 0.35); glow(g, 0x4060ff, 2.4, 0.3, top + 0.2, st[5][0] + 0.15, 0.35); }
   if (o.kind === 'suv') for (const sd of [-1, 1]) rod(g, 0.022, [sd * 0.6, top + 0.07, st[4][0] - 0.2], [sd * 0.6, top + 0.07, st[6][0] + 0.2], dk);
 }
+const WHO = { ford:{name:'Rob Ford', skin:0xb0a890, top:0x1c2230, legs:0x1c2230}, drake:{name:'Drake', skin:0x7c7458, top:0x101216, legs:0x16181c}, chow:{name:'Olivia Chow', skin:0xa0a47e, top:0xe8a81c, legs:0x1c1e24} };
+const tagMats = {};
+function nameTag(name) {
+  const m = tagMats[name] || (tagMats[name] = new T.SpriteMaterial({depthWrite:false, color:new T.Color(1.25, 1.25, 1.25), map:canvasTex(384, 116, (g) => {
+    g.fillStyle = 'rgba(8,12,18,.86)'; g.strokeStyle = '#9ad06a'; g.lineWidth = 4; g.beginPath(); g.moveTo(22, 4); g.lineTo(362, 4); g.arcTo(380, 4, 380, 22, 18); g.lineTo(380, 94); g.arcTo(380, 112, 362, 112, 18); g.lineTo(22, 112); g.arcTo(4, 112, 4, 94, 18); g.lineTo(4, 22); g.arcTo(4, 4, 22, 4, 18); g.fill(); g.stroke();
+    g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#9ad06a'; g.font = '600 24px ' + DISP; g.fillText('Z O M B I E', 192, 30); g.fillStyle = '#fff'; g.font = '800 54px ' + DISP; g.fillText(name.toUpperCase(), 192, 76, 350); })}));
+  const sp = new T.Sprite(m); sp.scale.set(1.55, 0.47, 1); return sp;
+}
+function buildCoyote(g) { // lean, long-legged, bushy tail, eyes that catch the light
+  const fur = lam(0x8a7556), dk = lam(0x4a3c2c), lt = lam(0xc4b494), body = new T.Group(); g.add(body);
+  const bg = geoCache.coyote || (geoCache.coyote = loft('coyRaw', [[-0.46, 0.06, 0.07], [-0.32, 0.105, 0.125], [0, 0.115, 0.135], [0.26, 0.125, 0.155], [0.42, 0.1, 0.125], [0.5, 0.055, 0.07]], 12).clone().rotateX(-Math.PI / 2));
+  const bm = new T.Mesh(bg, fur); bm.position.y = 0.56; body.add(bm);
+  rod(body, 0.065, [0, 0.62, -0.42], [0, 0.76, -0.6], fur); sph(body, 0.085, 0.08, 0.105, fur, 0, 0.8, -0.65); sph(body, 0.042, 0.04, 0.095, lt, 0, 0.77, -0.78); sph(body, 0.02, 0.02, 0.02, dk, 0, 0.78, -0.87);
+  for (const k of [-1, 1]) { cyl(body, 0.035, 0.11, fur, k * 0.055, 0.91, -0.62, 0.004); sph(body, 0.014, 0.014, 0.01, emit(0xdcff90, 3.5), k * 0.042, 0.82, -0.735); }
+  rod(body, 0.05, [0, 0.58, 0.44], [0, 0.4, 0.86], fur); sph(body, 0.05, 0.05, 0.07, dk, 0, 0.39, 0.88);
+  const legs = []; for (const [x, z] of [[-0.08, -0.32], [0.08, -0.32], [-0.08, 0.3], [0.08, 0.3]]) { const l = new T.Group(); l.position.set(x, 0.5, z); cyl(l, 0.028, 0.48, fur, 0, -0.24, 0); sph(l, 0.035, 0.025, 0.05, dk, 0, -0.48, -0.02); body.add(l); legs.push(l); }
+  g.userData.legs = legs; g.userData.body = body;
+}
+function buildCyclist(g, o) {
+  const fr = gloss(o.col || 0x2a6ea8), dk = lam(0x111318), bike = new T.Group(); g.add(bike);
+  for (const z of [-0.54, 0.54]) { const w = new T.Mesh(torusGeo, dk); w.scale.setScalar(1.42); w.position.set(0, 0.34, z); bike.add(w); const hb = cyl(bike, 0.03, 0.08, gloss(0x9aa0aa), 0, 0.34, z); hb.rotation.z = Math.PI / 2;
+    for (let k = 0; k < 6; k++) { const a = k * 1.047; rod(bike, 0.004, [0, 0.34, z], [0, 0.34 + Math.sin(a) * 0.33, z + Math.cos(a) * 0.33], gloss(0x9aa0aa)); } }
+  rod(bike, 0.02, [0, 0.36, 0.1], [0, 0.94, 0.22], fr); rod(bike, 0.02, [0, 0.9, 0.2], [0, 0.9, -0.36], fr); rod(bike, 0.022, [0, 0.36, 0.1], [0, 0.86, -0.36], fr); rod(bike, 0.016, [0, 0.36, 0.1], [0, 0.34, 0.54], fr); rod(bike, 0.016, [0, 0.9, 0.2], [0, 0.34, 0.54], fr);
+  rod(bike, 0.018, [0, 0.34, -0.54], [0, 1.04, -0.38], fr); rod(bike, 0.016, [-0.26, 1.05, -0.38], [0.26, 1.05, -0.38], dk); rbox(bike, 0.13, 0.05, 0.26, 0.04, dk, 0, 0.97, 0.24); cyl(bike, 0.085, 0.02, gloss(0x9aa0aa), 0, 0.36, 0.1).rotation.z = Math.PI / 2;
+  sph(bike, 0.035, 0.035, 0.03, emit(0xffffff, 6), 0, 0.98, -0.42); glow(bike, 0xe8f0ff, 1.3, 0, 0.98, -0.5, 0.5); sph(bike, 0.03, 0.03, 0.02, blinkMat, 0, 0.78, 0.5);
+  const r = person({civ:true, skin:0xd9a47c, top:o.top || 0xd8e020, legs:0x23262e, helmet:o.helmet}); r.position.set(0, 0.06, 0.16); g.add(r); g.userData.rider = r;
+}
 const DIM = { cone:{hw:0.62, len:0.5, y0:0, y1:0.48, hint:'Jump'}, bin:{hw:0.55, len:0.7, y0:0, y1:0.62, hint:'Jump'}, barrier:{hw:1.0, len:0.4, y0:0, y1:0.68, hint:'Jump'},
   pit:{hw:0.8, len:1.8, y0:-1, y1:0.06, hint:'Jump'}, car:{hw:0.9, len:4.0, y0:0, y1:1.1, hint:'Jump or dodge'}, tram:{hw:1.2, len:15, y0:0, y1:3.4, hint:'Switch lanes'},
-  scaffold:{hw:5.2, len:1.5, y0:1.1, y1:4.5, hint:'Slide'}, zombie:{hw:0.32, len:0.6, y0:0, y1:1.8, hint:'Shoot or dodge'},
+  scaffold:{hw:5.2, len:1.5, y0:1.1, y1:4.5, hint:'Slide'}, zombie:{hw:0.32, len:0.6, y0:0, y1:1.8, hint:'Shoot or dodge'}, coyote:{hw:0.3, len:1.1, y0:0, y1:0.8, hint:'Jump or shoot'}, cyclist:{hw:0.95, len:0.5, y0:0, y1:1.7, hint:'Cyclist! Switch lanes'},
   token:{hw:0.55, len:0.8, y0:-0.5, y1:0.5}, puck:{hw:0.6, len:1, y0:-0.9, y1:0.9}, coffee:{hw:0.6, len:1, y0:-0.9, y1:0.9} };
 function add(type, lane, z, o) {
   o = o || {}; const d = DIM[type], x = type === 'scaffold' ? 0 : LANES[lane], y = o.y || 0;
@@ -1117,7 +1158,7 @@ function zombie(lane, z, fast) { const d = dIndex(S.dist - z); add('zombie', lan
 function spawnRow() {
   const d = Math.min(1, S.dist / 1500), z = SPAWN_Z, easy = S.dist < 160, label = DISTRICTS[dIndex(S.dist - z)].car;
   const opts = easy ? [['single', 3], ['zomb', 2], ['scaf', 1.5], ['low3', 1]] :
-    [['single', 2], ['low3', 2], ['scaf', 2], ['tram', 1.6 + d], ['cars', 1.5 + d], ['zomb', 2.5], ['zline', d * 1.5], ['runner', d * 2], ['combo', d * 1.8 + 0.3]];
+    [['single', 2], ['low3', 2], ['scaf', 2], ['tram', 1.6 + d], ['cars', 1.5 + d], ['zomb', 2.5], ['zline', d * 1.5], ['runner', d * 2], ['combo', d * 1.8 + 0.3], ['coyotes', S.dist > 220 ? 1.1 + d : 0], ['cyclist', S.dist > 180 ? 1.4 : 0], ['celeb', S.dist > 260 ? 0.9 : 0]];
   let tot = 0; for (const o of opts) tot += o[1];
   let r = Math.random() * tot, p = opts[0][0]; for (const o of opts) { if ((r -= o[1]) <= 0) { p = o[0]; break; } }
   const order = [0, 1, 2].sort(() => Math.random() - 0.5), [a, b, c] = order, tok = Math.random() < 0.6;
@@ -1132,6 +1173,10 @@ function spawnRow() {
     case 'zomb': zombie(easy ? P.lane : a, z, false); if (!easy && Math.random() < 0.5) zombie(b, z - rnd(0, 4), false); len = 5; break;
     case 'zline': for (const l of order) zombie(l, z - rnd(0, 1.5), false); len = 4; break;
     case 'runner': zombie(P.lane, z, true); break;
+    case 'coyotes': { const n = 1 + Math.floor(Math.random() * (1.4 + d * 1.6)); for (let k = 0; k < n; k++) add('coyote', order[k], z - k * rnd(2.5, 5), {vs:rnd(6, 8.5)}); len = 10; break; }
+    case 'cyclist': { const dir = Math.random() < 0.5 ? 1 : -1, e = add('cyclist', 1, z, {dir, col:pick([0x2a6ea8, 0xb3261c, 0x2f8a4a, 0x8a8f9a]), top:pick([0xd8e020, 0xe8731c, 0x38b0c8]), helmet:pick([0xe8e8e4, 0x1c1e24, 0xc4221a])}); e.x = -dir * 7.4; e.mesh.position.x = e.x;
+      if (d > 0.5 && Math.random() < 0.4) { const f = add('cyclist', 1, z - 7, {dir:-dir, col:0x8a8f9a, top:0xe8731c}); f.x = dir * 7.4; f.mesh.position.x = f.x; } if (tok) tokens(a, z + 6, 4, false); len = 8; break; }
+    case 'celeb': { const who = ['ford', 'drake', 'chow'][(S.celebN = (S.celebN || 0) + 1) % 3], e = add('zombie', a, z, {who, vs:rnd(1, 1.6)}); if (who === 'ford') e.hw = 0.52; if (tok) tokens(b, z, 5, false); len = 5; break; }
     case 'combo': add('tram', a, z - 7.5, {label}); car(b, z - 4); zombie(c, z - 8, false); len = 16; break;
   }
   const rest = S.speed * (lerp(1.25, 0.72, d) + Math.random() * lerp(0.6, 0.35, d));
@@ -1249,25 +1294,37 @@ function update(dt) {
   for (const e of ents) {
     if (e.type === 'zombie') {
       if (e.dead > 0) { e.dead += dt; e.z += dz; e.mesh.position.z = e.z; e.mesh.rotation.x = Math.min(1.5, e.dead * 7); e.mesh.position.y = -e.dead * 0.2; continue; }
-      e.z += e.vs * dt; if (e.fast && e.z < -6) { const sx = 2.6 * dt; e.x += clamp(P.x - e.x, -sx, sx); e.mesh.position.x = e.x; }
-      pose(e.mesh.userData.z, S.t * (e.fast ? 14 : 6) + e.ph);
+      if (e.who && !e.said && e.z > -62) { e.said = true; S.toast = 'Zombie ' + WHO[e.who].name + ' ahead!'; S.toastT = S.t; }
+      if (e.stun > 0) e.stun -= dt; else e.z += e.vs * dt; if (e.fast && e.z < -6) { const sx = 2.6 * dt; e.x += clamp(P.x - e.x, -sx, sx); e.mesh.position.x = e.x; }
+      pose(e.mesh.userData.z, e.stun > 0 ? e.ph : S.t * (e.fast ? 14 : 6) + e.ph); if (e.who) e.mesh.userData.z.rotation.x = e.stun > 0 ? 0.35 : 0;
+    } else if (e.type === 'coyote') {
+      if (e.flee) { e.x += e.flee * 9 * dt; e.z -= 4 * dt; e.mesh.position.x = e.x; e.mesh.rotation.y = Math.PI - e.flee * 1.1; if (Math.abs(e.x) > 9) e.gone = true; }
+      else { e.z += e.vs * dt; e.x += Math.sin(S.t * 2.2 + e.ph) * 0.5 * dt; e.mesh.position.x = e.x; }
+      const u = e.mesh.userData, ph = S.t * 17 + e.ph; u.legs[0].rotation.x = Math.sin(ph) * 0.95; u.legs[1].rotation.x = Math.sin(ph + 0.5) * 0.95; u.legs[2].rotation.x = Math.sin(ph + 2.6) * 0.95; u.legs[3].rotation.x = Math.sin(ph + 3.1) * 0.95; u.body.position.y = Math.abs(Math.sin(ph)) * 0.07; u.body.rotation.x = Math.sin(ph) * 0.06;
+    } else if (e.type === 'cyclist') {
+      if (!e.go && e.z > -34) { e.go = true; const tHit = Math.max(0.6, -e.z / v); e.vx = clamp(Math.abs(LANES[P.lane] - e.x) / tHit, 3.2, 10) * e.dir; tone(1700, 0.07, 'triangle', 0.05); setTimeout(() => tone(1700, 0.09, 'triangle', 0.05), 130); }
+      if (e.go && Math.abs(e.x) < 9.5) { e.x += e.vx * dt; e.mesh.position.x = e.x; }
+      pose(e.mesh.userData.rider, e.go ? S.t * 9 + e.ph : e.ph, {ride:true});
     } else if (e.type === 'token') e.mesh.rotation.y += dt * 4;
     else if (e.type === 'puck' || e.type === 'coffee') { e.mesh.position.y = e.y + Math.sin(S.t * 4 + e.ph) * 0.12; e.mesh.rotation.y += dt * 2; }
     e.z += dz; e.mesh.position.z = e.z;
     if (e.hit) continue;
     const pad = e.hint ? 0.12 : 0.4, half = e.len / 2 + pad + dz;
-    if (e.hint && e.z > hintZ && e.z < -3 && (e.type === 'scaffold' || Math.abs(e.x - LANES[P.lane]) < e.hw + 0.3)) { hintZ = e.z; hint = e.type === 'zombie' && S.pucks <= 0 ? 'Dodge' : e.hint; }
+    if (e.hint && e.z > hintZ && e.z < -3 && !e.flee && (e.type === 'scaffold' || (e.type === 'cyclist' ? e.z > -38 && Math.abs(e.x) < 8 : Math.abs(e.x - LANES[P.lane]) < e.hw + 0.3))) { hintZ = e.z; hint = e.who ? 'Stun or dodge' : e.type === 'zombie' && S.pucks <= 0 ? 'Dodge' : e.hint; }
     if (e.z < -half || e.z > half || Math.abs(P.x - e.x) > e.hw + (e.hint ? 0.18 : 0.4) || P.y >= e.y1 || P.y + ph <= e.y0) continue;
     if (e.type === 'token') { e.hit = e.gone = true; S.tokens++; tone(1200, 0.07, 'square', 0.03, 1700); }
     else if (e.type === 'puck') { e.hit = e.gone = true; S.pucks = Math.min(9, S.pucks + 2); tone(700, 0.1, 'square', 0.04, 1000); }
     else if (e.type === 'coffee') { e.hit = e.gone = true; S.gap = Math.min(100, S.gap + 30); S.toast = 'Tim Hortons! +9 m lead'; S.toastT = S.t; P.inv = Math.max(P.inv, 0.4); tone(520, 0.25, 'triangle', 0.06, 1040); puff(P.x, 1, 0, 0xffb347, 10, 2.5); }
-    else if (P.inv <= 0) { e.hit = true; hurt(e.type === 'zombie' ? 36 : e.type === 'tram' ? 30 : 26, e.type === 'zombie'); }
+    else if (e.flee) continue;
+    else if (P.inv <= 0) { e.hit = true; hurt(e.type === 'zombie' ? 36 : e.type === 'tram' ? 30 : e.type === 'coyote' ? 22 : 26, e.type === 'zombie' || e.type === 'coyote'); }
   }
   for (const s of shots) {
     s.z -= 46 * dt; s.m.position.z = s.z;
     for (const e of ents) if (e.type === 'zombie' && !e.dead && !s.gone && Math.abs(e.x - s.x) < 0.85 && s.z < e.z + 0.8 && s.z > e.z - 2) {
-      e.dead = 0.001; e.hit = true; s.gone = true; S.kills++; puff(e.x, 1.2, e.z, 0x8fbf6a, 12, 3); tone(180, 0.2, 'sawtooth', 0.07, 60);
+      if (e.who) { e.stun = 1.6; s.gone = true; S.toast = 'Zombie ' + WHO[e.who].name + ' is only stunned!'; S.toastT = S.t; puff(e.x, 1.3, e.z, 0xc8d0a0, 6, 2); tone(240, 0.15, 'square', 0.05, 120); }
+      else { e.dead = 0.001; e.hit = true; s.gone = true; S.kills++; puff(e.x, 1.2, e.z, 0x8fbf6a, 12, 3); tone(180, 0.2, 'sawtooth', 0.07, 60); }
     }
+    for (const e of ents) if (e.type === 'coyote' && !e.flee && !s.gone && Math.abs(e.x - s.x) < 0.8 && s.z < e.z + 0.9 && s.z > e.z - 2.2) { e.flee = e.x >= 0 ? 1 : -1; e.hit = true; s.gone = true; puff(e.x, 0.6, e.z, 0xc4b494, 6, 2); tone(900, 0.18, 'sawtooth', 0.05, 1500); }
     if (s.z < -110) s.gone = true; if (s.gone) scene.remove(s.m);
   }
   shots = shots.filter(s => !s.gone);
