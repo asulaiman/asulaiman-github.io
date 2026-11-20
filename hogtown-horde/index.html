@@ -1513,16 +1513,26 @@ function hurt(dmg, bite) {
   tone(bite ? 110 : 160, 0.28, 'sawtooth', 0.09, 50); puff(P.x, P.y + 1, 0, bite ? 0xb3221a : 0xc9b458, 10, 3);
   if (S.gap <= 0) { S.gap = 0; S.mode = 'dying'; S.dying = 0; tone(90, 0.9, 'sawtooth', 0.1, 35); }
 }
-/* ---------- player name and leaderboard: shared through the artifact's database where the viewer may write, otherwise kept on this device ---------- */
-const LB = {db:null, uid:null, docs:[], mine:null, local:[], live:false, note:'', writing:Promise.resolve(), last:null};
+/* ---------- player name and leaderboard: shared through the artifact's database where possible, always kept on this device too ---------- */
+const LB = {db:null, uid:null, docs:[], mine:null, local:[], live:false, state:'local', reason:'', writing:Promise.resolve(), last:null};
 const cleanName = v => String(v == null ? '' : v).replace(/[\u0000-\u001f\u007f]/g, '').replace(/\s+/g, ' ').trim().slice(0, 16);
 const cleanWhere = v => String(v == null ? '' : v).replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 28);
 const okRun = r => r && typeof r === 'object' && Number.isFinite(+r.score) && +r.score >= 0;
+const asEntry = (r, uid) => ({name:cleanName(r.name) || 'Runner', score:Math.floor(+r.score), where:cleanWhere(r.where), at:+r.at || 0, uid});
 try { LB.local = (JSON.parse(localStorage.getItem('hogtown-runs') || '[]') || []).filter(okRun).slice(0, 20); } catch (e) { LB.local = []; }
 try { $('pname').value = cleanName(localStorage.getItem('hogtown-name') || ''); } catch (e) {}
-function boardEntries() {
-  if (LB.live) { const out = []; for (const d of LB.docs) for (const r of (Array.isArray(d.runs) ? d.runs.slice(0, 5) : [])) if (okRun(r)) out.push({name:cleanName(r.name) || 'Runner', score:Math.floor(+r.score), where:cleanWhere(r.where), at:+r.at || 0, uid:d.id}); return out.sort((a, b) => b.score - a.score); }
-  return LB.local.map(r => ({name:cleanName(r.name) || 'Runner', score:Math.floor(+r.score), where:cleanWhere(r.where), at:+r.at || 0, uid:'local'})).sort((a, b) => b.score - a.score);
+function boardEntries() { // shared runs plus this device's runs, without duplicates
+  const out = [], seen = new Set(), key = r => r.at + ':' + r.score;
+  if (LB.live) for (const d of LB.docs) for (const r of (Array.isArray(d.runs) ? d.runs.slice(0, 5) : [])) if (okRun(r)) { const e = asEntry(r, d.id); if (!seen.has(key(e))) { seen.add(key(e)); out.push(e); } }
+  for (const r of LB.local) { const e = asEntry(r, 'local'); if (!seen.has(key(e))) { seen.add(key(e)); out.push(e); } }
+  return out.sort((a, b) => b.score - a.score);
+}
+function boardNote() {
+  if (LB.state === 'saved') return 'Your run is on the shared leaderboard.';
+  if (LB.state === 'saving') return 'Saving your run to the shared leaderboard…';
+  if (LB.state === 'device') return 'Your run is saved on this device. ' + LB.reason;
+  if (LB.live) return 'Shared with everyone who plays this page, plus runs on this device.';
+  return LB.reason || 'Best runs on this device.';
 }
 function renderBoards() {
   const rows = boardEntries(), top = rows.slice(0, 10), mark = LB.last;
@@ -1533,33 +1543,42 @@ function renderBoards() {
       const rk = document.createElement('span'); rk.className = 'r'; rk.textContent = '#' + (i + 1);
       const nm = document.createElement('span'); nm.className = 'n'; nm.textContent = r.name; if (r.where) { const w = document.createElement('small'); w.textContent = r.where; nm.appendChild(w); }
       const sc = document.createElement('span'); sc.className = 's'; sc.textContent = r.score.toLocaleString(); li.append(rk, nm, sc); ol.appendChild(li); });
-    $(noteId).textContent = LB.note || (LB.live ? 'Shared with everyone who plays this page.' : 'Best runs on this device.');
+    $(noteId).textContent = boardNote();
   }
 }
 renderBoards();
 (async () => {
   const c = window.claude; if (!c || typeof c.use !== 'function') return;
-  const [db, user] = await Promise.all([c.use('db'), c.use('user')]); if (!db) return;
+  const [db, user] = await Promise.all([c.use('db'), c.use('user')]);
+  if (!db) { LB.reason = 'The shared leaderboard isn’t available in this view (signed out, or not supported here), so runs stay on this device.'; renderBoards(); return; }
   LB.db = db; try { LB.uid = user ? await user.id() : null; } catch (e) { LB.uid = null; }
-  try { if (user && (await user.can('data.write')) === false) LB.note = 'You can see the shared board, but your runs are kept on this device.'; } catch (e) {}
-  const timer = setTimeout(() => { if (!LB.live) { LB.note = 'The shared leaderboard can\'t be reached yet; showing runs on this device.'; renderBoards(); } }, 10000);
+  if (!LB.uid) LB.reason = 'Sign in to claude.ai to post to the shared leaderboard.';
+  if (LB.uid) { // the name follows the account, in its private space, in case this browser forgets it
+    try { const pr = await db.doc('data/users/' + LB.uid + '/profile').get(); const n = pr.exists ? cleanName(pr.data().name) : ''; if (n && !cleanName($('pname').value)) $('pname').value = n; } catch (e) {} }
+  const timer = setTimeout(() => { if (!LB.live) { LB.reason = 'The shared leaderboard can’t be reached yet; showing runs on this device.'; renderBoards(); } }, 10000);
   db.collection('scores').limit(500).onSnapshot(snap => {
-    if (!snap.metadata.fromCache) { clearTimeout(timer); if (LB.note.startsWith('The shared')) LB.note = ''; }
+    if (!snap.metadata.fromCache) { clearTimeout(timer); if (LB.reason.startsWith('The shared leaderboard can')) LB.reason = ''; }
     LB.live = true; LB.docs = snap.docs.map(d => Object.assign({id:d.id}, d.data())); LB.mine = LB.docs.find(d => d.id === LB.uid) || null; renderBoards();
-  }, () => { clearTimeout(timer); LB.live = false; LB.note = 'The shared leaderboard is unavailable; showing runs on this device.'; renderBoards(); });
+  }, () => { clearTimeout(timer); LB.live = false; LB.reason = 'The shared leaderboard is unavailable right now; showing runs on this device.'; renderBoards(); });
 })();
-function recordRun(run) {
-  LB.last = run; LB.local = LB.local.concat([run]).sort((a, b) => b.score - a.score).slice(0, 20);
-  try { localStorage.setItem('hogtown-runs', JSON.stringify(LB.local)); } catch (e) {}
-  if (LB.db && LB.uid && !LB.note.startsWith('You can see')) {
-    const prev = LB.mine && Array.isArray(LB.mine.runs) ? LB.mine.runs.filter(okRun) : [], runs = prev.concat([run]).sort((a, b) => b.score - a.score).slice(0, 5);
-    LB.writing = LB.writing.then(() => LB.db.doc('scores/' + LB.uid).set({runs, best:runs[0].score, updatedAt:Date.now()})).catch(e => {
-      if (e && e.code === 'invalid_argument') LB.note = 'You can see the shared board, but your runs are kept on this device.'; else if (e && e.code === 'quota_exceeded') LB.note = 'The shared board is full; this run was kept on this device.'; else LB.note = 'This run could not be shared; it was kept on this device.';
+function saveShared(run) {
+  if (!LB.db) { LB.state = 'device'; if (!LB.reason) LB.reason = 'The shared leaderboard isn’t available in this view.'; return; }
+  if (!LB.uid) { LB.state = 'device'; LB.reason = 'Sign in to claude.ai to post to the shared leaderboard.'; return; }
+  LB.state = 'saving';
+  const write = () => { const prev = LB.mine && Array.isArray(LB.mine.runs) ? LB.mine.runs.filter(okRun) : [], runs = prev.filter(r => +r.at !== run.at).concat([run]).sort((a, b) => b.score - a.score).slice(0, 5);
+    return LB.db.doc('scores/' + LB.uid).set({name:run.name, runs, best:runs[0].score, updatedAt:Date.now()}); };
+  LB.writing = LB.writing.then(write).catch(e => e && e.code === 'unavailable' ? new Promise(r => setTimeout(r, 1500 + Math.random() * 1000)).then(write) : Promise.reject(e))
+    .then(() => { LB.state = 'saved'; LB.db.doc('data/users/' + LB.uid + '/profile').set({name:run.name}).catch(() => {}); renderBoards(); })
+    .catch(e => { LB.state = 'device'; const code = e && e.code;
+      LB.reason = code === 'invalid_argument' ? 'Your access to this page lets you see the shared board but not post to it.' : code === 'quota_exceeded' ? 'The shared board is full.' : 'It couldn’t be shared (' + (code || 'error') + ').';
       renderBoards(); });
-  }
-  renderBoards();
+}
+function recordRun(run) {
+  LB.last = run; LB.local = LB.local.filter(r => +r.at !== run.at).concat([run]).sort((a, b) => b.score - a.score).slice(0, 20);
+  try { localStorage.setItem('hogtown-runs', JSON.stringify(LB.local)); } catch (e) {}
+  saveShared(run); renderBoards();
   const rows = boardEntries(), pos = rows.findIndex(r => r.at === run.at && r.score === run.score);
-  $('oRank').textContent = pos >= 0 ? (pos === 0 ? 'New top score!' : 'You placed #' + (pos + 1) + (LB.live ? ' on the leaderboard' : ' on this device')) : '';
+  $('oRank').textContent = pos === 0 ? 'New top score!' : pos > 0 ? 'You placed #' + (pos + 1) : '';
 }
 function endGame() {
   S.mode = 'over'; const sc = score(), d = DISTRICTS[dIndex(S.dist)];
