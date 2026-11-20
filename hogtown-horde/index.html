@@ -192,7 +192,7 @@ const pick = a => a[Math.floor(Math.random() * a.length)];
 /* ---------- state ---------- */
 const S = {mode:'title', t:0, dist:0, speed:11, slow:1, gap:70, sinceHit:9, pucks:3, kills:0, tokens:0,
            shake:0, cool:0, nextRow:40, banner:0, lastD:-1, dying:0, best:0, muted:false};
-const P = {lane:1, x:0, y:0, vy:0, ground:true, jumps:0, slide:0, slideDur:0, slideHold:false, slideQ:false, inv:0, swing:0, phase:0};
+const P = {lane:1, x:0, y:0, vy:0, ground:true, jumps:0, slide:0, slideDur:0, slideHold:false, slideQ:-9, inv:0, swing:0, phase:0};
 let ents = [], shots = [], parts = [];
 try { S.best = +localStorage.getItem('hogtown-best') || 0; } catch (e) {}
 
@@ -397,13 +397,6 @@ const far = new T.Group(); scene.add(far);
     SILVER = skinM2('#232a33', '#e8f0ff', 9, 42, 0.14), TEAL = skinM2('#0a2026', '#bfeee8', 8, 44, 0.2), GREY = skinM2('#14171d', '#ffd9a0', 8, 30, 0.12), dark = bas(0x0b0e15, true), conc = bas(0x1c1f27, true);
   const tw = (x, z, w, d, h, m, y0) => { const b = new T.Mesh(BOX, m); b.scale.set(w, h, d); b.position.set(x, (y0 || 0) + h / 2, z); far.add(b); return b; };
   const cy = (x, y, z, rb, rt, h, m, seg) => { const c = new T.Mesh(new T.CylinderGeometry(rt, rb, h, seg || 16), m); c.position.set(x, y, z); far.add(c); return c; };
-  // CN Tower
-  const X = -70, Z = -760;
-  cy(X, 168, Z, 17, 5, 336, conc, 6); for (let k = 0; k < 3; k++) { const a = k * 2.094 + 0.5; tw(X + Math.cos(a) * 9, Z + Math.sin(a) * 9, 5, 5, 300, conc).rotation.y = -a; }
-  cy(X, 338, Z, 15, 21, 14, bas(0xb9bec8, true), 24); cy(X, 349, Z, 21.5, 21.5, 5, emit(0xffd9a0, 2.2, true), 24); cy(X, 356, Z, 21, 16, 9, dark, 24); cy(X, 362, Z, 16.2, 16.2, 2.5, emit(0xd9261c, 3, true), 24); cy(X, 368, Z, 12, 7, 10, conc, 16);
-  cy(X, 410, Z, 5, 3.4, 76, conc, 8); cy(X, 450, Z, 5.5, 5.5, 5, emit(0xffd9a0, 1.6, true), 12); cy(X, 503, Z, 2.6, 0.6, 100, dark, 6);
-  for (let k = 0; k < 3; k++) { const a = k * 2.094 + 1.55; tw(X + Math.cos(a) * 8.5, Z + Math.sin(a) * 8.5, 0.9, 0.9, 300, emit(0xd9261c, 1.6, true), 20); }
-  far.userData.beacon = new T.Mesh(new T.SphereGeometry(3, 8, 8), emit(0xff3b2f, 6, true)); far.userData.beacon.position.set(X, 554, Z); far.add(far.userData.beacon);
   // the dome and its hotel
   const dome = new T.Mesh(new T.SphereGeometry(74, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2), bas(0x363b46, true)); dome.scale.y = 0.5; dome.position.set(-195, 26, -735); far.add(dome);
   cy(-195, 13, -735, 76, 76, 26, GREY, 32); tw(-128, -722, 40, 30, 48, GREY);
@@ -426,6 +419,69 @@ const far = new T.Group(); scene.add(far);
   for (let i = 0; i < 70; i++) { const x = -760 + i * 22 + hh(i) * 10, h = 40 + hh(i * 2.7) * 120, w = 18 + hh(i + 9) * 16; tw(x, -850 - hh(i * 4.1) * 70, w, w, h, fill[i % 6]); }
   far.traverse(m => { if (m.material) { m.material.transparent = true; m.material.opacity = 0.3; } }); // the skyline sits deep in the haze
 })();
+
+/* CN Tower: Y-shaped tapering concrete shaft, main pod with its white radome ring and two lit glass decks,
+   the slimmer upper shaft and SkyPod, then the antenna mast; washed in LED colour as it is at night */
+const towerU = {uLed:{value:new T.Color()}, uHaze:{value:new T.Color()}};
+const TOWER_GLSL = `vec3 hazed(vec3 c, float y, vec3 hz){ float k = 0.6 * exp(-y / 120.0) + 0.1; return mix(c, mix(hz, vec3(0.03, 0.082, 0.072), smoothstep(0.0, 350.0, y)), k); }`;
+const TOWER_VS = 'attribute float edge; varying vec3 vN; varying float vY; varying float vE; varying vec2 vUv; void main(){ vN = normalize(mat3(modelMatrix) * normal); vec4 w = modelMatrix * vec4(position, 1.0); vY = w.y; vE = edge; vUv = uv; gl_Position = projectionMatrix * viewMatrix * w; }';
+const towerMat = new T.ShaderMaterial({fog:false, uniforms:towerU, vertexShader:TOWER_VS, fragmentShader:`uniform vec3 uLed, uHaze; varying vec3 vN; varying float vY; varying float vE; ${TOWER_GLSL}
+  void main(){ vec3 n = normalize(vN); float key = 0.45 + 0.55 * max(dot(n, normalize(vec3(-0.35, 0.2, 0.9))), 0.0);
+    vec3 c = vec3(0.05, 0.05, 0.055) * key + uLed * key * (0.5 + 0.5 * smoothstep(0.0, 260.0, vY)) + uLed * pow(vE, 8.0) * 1.6;
+    gl_FragColor = vec4(hazed(c, vY, uHaze), 1.0);
+    #include <tonemapping_fragment>
+    #include <encodings_fragment>
+  }`});
+const podMat = (b1, b2) => new T.ShaderMaterial({fog:false, uniforms:{uLed:towerU.uLed, uHaze:towerU.uHaze, uB:{value:new T.Vector4(b1[0], b1[1], b2[0], b2[1])}}, vertexShader:TOWER_VS.replace('attribute float edge; ', '').replace('vE = edge; ', ''),
+  fragmentShader:`uniform vec3 uLed, uHaze; uniform vec4 uB; varying vec3 vN; varying float vY; varying float vE; varying vec2 vUv; ${TOWER_GLSL}
+  float h1(float x){ return fract(sin(x * 91.37) * 43758.5453); }
+  void main(){ vec3 n = normalize(vN);
+    float gl = max(step(uB.x, vY) * step(vY, uB.y), step(uB.z, vY) * step(vY, uB.w)), cell = floor(vUv.x * 132.0), mull = step(0.17, fract(vUv.x * 132.0));
+    float lit = mix(0.22, 1.0, step(0.32, h1(cell + step(uB.z, vY) * 17.0)));
+    vec3 glass = mix(vec3(0.01, 0.013, 0.017), vec3(1.0, 0.74, 0.46) * 1.5 * lit, mull);
+    float key = 0.3 + 0.55 * max(dot(n, normalize(vec3(-0.35, 0.35, 0.9))), 0.0);
+    vec3 conc = vec3(0.5, 0.51, 0.53) * key * 0.5 + uLed * (0.18 + 1.5 * max(-n.y, 0.0));
+    gl_FragColor = vec4(hazed(mix(conc, glass, gl), vY, uHaze), 1.0);
+    #include <tonemapping_fragment>
+    #include <encodings_fragment>
+  }`});
+function loftRings(rings, edges) { // flat-shaded prism through a stack of same-length outlines
+  const pos = [], ed = [], n = rings[0].pts.length;
+  for (let i = 0; i < rings.length - 1; i++) { const A = rings[i], B = rings[i + 1];
+    for (let j = 0; j < n; j++) { const k = (j + 1) % n, a0 = [A.pts[j][0], A.y, A.pts[j][1]], a1 = [A.pts[k][0], A.y, A.pts[k][1]], b0 = [B.pts[j][0], B.y, B.pts[j][1]], b1 = [B.pts[k][0], B.y, B.pts[k][1]];
+      pos.push(...a0, ...b1, ...a1, ...a0, ...b0, ...b1); ed.push(edges[j], edges[k], edges[k], edges[j], edges[j], edges[k]); } }
+  const g = new T.BufferGeometry(); g.setAttribute('position', new T.Float32BufferAttribute(pos, 3)); g.setAttribute('edge', new T.Float32BufferAttribute(ed, 1)); g.computeVertexNormals();
+  const P3 = g.attributes.position, N3 = g.attributes.normal; let sgn = 0; for (let v = 0; v < P3.count; v += 3) sgn += N3.getX(v) * P3.getX(v) + N3.getZ(v) * P3.getZ(v);
+  if (sgn < 0) { for (const at of [P3, g.attributes.edge]) { const z = at.itemSize, a = at.array; for (let v = 0; v < at.count; v += 3) for (let c = 0; c < z; c++) { const t = a[(v + 1) * z + c]; a[(v + 1) * z + c] = a[(v + 2) * z + c]; a[(v + 2) * z + c] = t; } } g.computeVertexNormals(); }
+  return g;
+}
+const cnTower = new T.Group(), TX = -70, TZ = -760, LEG_TOP = 335; cnTower.position.set(TX, 0, TZ); far.add(cnTower);
+const legAt = h => { const t = h / LEG_TOP, rc = lerp(8.5, 6.2, t); return {rc, L:rc + 11.5 * Math.pow(1 - t, 1.5), w:lerp(8, 6.4, t)}; };
+const valleyR = q => Math.max(q.w / Math.sqrt(3), q.rc * 0.8);
+(() => {
+  const rings = [];
+  for (let i = 0; i <= 24; i++) { const h = LEG_TOP * i / 24, q = legAt(h), pts = [];
+    for (let k = 0; k < 3; k++) { const a = Math.PI / 2 + k * 2.0944, dx = Math.cos(a), dz = Math.sin(a), px = -dz, pz = dx, rv = valleyR(q);
+      pts.push([dx * q.L - px * q.w / 2, dz * q.L - pz * q.w / 2], [dx * q.L + px * q.w / 2, dz * q.L + pz * q.w / 2], [Math.cos(a + 1.0472) * rv, Math.sin(a + 1.0472) * rv]); }
+    rings.push({y:h, pts}); }
+  cnTower.add(new T.Mesh(loftRings(rings, [1, 1, 0.3, 1, 1, 0.3, 1, 1, 0.3]), towerMat));
+  const up = []; for (const [h, r] of [[LEG_TOP - 4, 6.4], [452, 4.3]]) { const pts = []; for (let k = 0; k < 6; k++) { const a = k * 1.0472 + Math.PI / 6; pts.push([Math.cos(a) * r, Math.sin(a) * r]); } up.push({y:h, pts}); }
+  cnTower.add(new T.Mesh(loftRings(up, [0.5, 0.5, 0.5, 0.5, 0.5, 0.5]), towerMat));
+  const lathe = (pts, mat) => cnTower.add(new T.Mesh(new T.LatheGeometry(pts.map(q => new T.Vector2(q[0], q[1])), 72), mat));
+  lathe([[6.6, 320], [9, 326], [14, 330.5], [19, 333.6], [22.4, 336.2], [23.2, 338.4], [22.4, 340.5], [20.2, 341.3], [21, 341.6], [22.6, 346.4], [22.2, 346.8], [22.2, 349.6], [20.6, 350], [21.3, 354], [22, 354.4], [21.6, 355.6], [17, 357.6], [10, 359.6], [6, 361]], podMat([341.6, 346.4], [350, 354]));
+  lathe([[4.3, 440], [5.6, 442.6], [6.6, 443.6], [6.8, 448.6], [6.1, 449.6], [4.8, 451.4], [3.4, 452.6]], podMat([443.7, 448.5], [0, 0]));
+  const mast = new T.CylinderGeometry(0.55, 2.7, 98, 8, 1, true); mast.setAttribute('edge', new T.Float32BufferAttribute(new Float32Array(mast.attributes.position.count), 1));
+  const m = new T.Mesh(mast, towerMat); m.position.y = 503; cnTower.add(m); cyl(cnTower, 3.6, 5, 0x1a1c22, 0, 454, 0);
+  for (const y of [470, 492, 515, 535]) { const r = lerp(2.7, 0.55, (y - 454) / 98) + 0.25; for (let k = 0; k < 3; k++) { const a = k * 2.0944; const b = new T.Mesh(new T.SphereGeometry(0.7, 6, 6), emit(0xff3020, 3, true)); b.position.set(Math.cos(a) * r, y, Math.sin(a) * r); cnTower.add(b); } }
+  far.userData.beacon = new T.Mesh(new T.SphereGeometry(1.6, 8, 8), emit(0xff3b2f, 7, true)); far.userData.beacon.position.set(TX, 553, TZ); far.add(far.userData.beacon);
+  cnTower.userData.lifts = [0, 1].map(i => { const b = new T.Mesh(BOX, emit(0xffd9a0, 4, true)); b.scale.set(1.6, 2.6, 1.6); cnTower.add(b); return {b, ph:i * 2.6}; });
+})();
+const LEDS = [C(0xff2e2e, 0.5), C(0xffffff, 0.36), C(0xb04cff, 0.5), C(0x2f6bff, 0.55), C(0x22e0c0, 0.45)], ledTmp = new T.Color();
+function updateTower(t, haze) {
+  const k = t / 14, i = Math.floor(k) % LEDS.length, f = clamp((k - Math.floor(k) - 0.8) / 0.2, 0, 1);
+  towerU.uLed.value.copy(ledTmp.copy(LEDS[i]).lerp(LEDS[(i + 1) % LEDS.length], f * f * (3 - 2 * f))); towerU.uHaze.value.copy(haze);
+  for (const l of cnTower.userData.lifts) { const y = 12 + 316 * (0.5 - 0.5 * Math.cos(t * 0.11 + l.ph)), a = Math.PI / 2 + 1.0472, r = valleyR(legAt(y)) + 0.5; l.b.position.set(Math.cos(a) * r, y, Math.sin(a) * r); }
+}
 
 /* ---------- road ---------- */
 const RXp = k => (8 + k) * 32;
@@ -1144,7 +1200,7 @@ function buildCyclist(g, o) {
 }
 const DIM = { cone:{hw:0.62, len:0.5, y0:0, y1:0.48, hint:'Jump'}, bin:{hw:0.55, len:0.7, y0:0, y1:0.62, hint:'Jump'}, barrier:{hw:1.0, len:0.4, y0:0, y1:0.68, hint:'Jump'},
   pit:{hw:0.8, len:1.8, y0:-1, y1:0.06, hint:'Jump'}, car:{hw:0.9, len:4.0, y0:0, y1:1.1, hint:'Jump or dodge'}, tram:{hw:1.2, len:15, y0:0, y1:3.4, hint:'Switch lanes'},
-  scaffold:{hw:5.2, len:1.5, y0:1.1, y1:4.5, hint:'Slide'}, zombie:{hw:0.32, len:0.6, y0:0, y1:1.8, hint:'Shoot or dodge'}, coyote:{hw:0.3, len:1.1, y0:0, y1:0.8, hint:'Jump or shoot'}, cyclist:{hw:0.95, len:0.5, y0:0, y1:1.7, hint:'Cyclist! Switch lanes'},
+  scaffold:{hw:5.2, len:0.8, y0:1.0, y1:4.5, hint:'Slide'}, zombie:{hw:0.32, len:0.6, y0:0, y1:1.8, hint:'Shoot or dodge'}, coyote:{hw:0.3, len:1.1, y0:0, y1:0.8, hint:'Jump or shoot'}, cyclist:{hw:0.95, len:0.5, y0:0, y1:1.7, hint:'Cyclist! Switch lanes'},
   token:{hw:0.55, len:0.8, y0:-0.5, y1:0.5}, puck:{hw:0.6, len:1, y0:-0.9, y1:0.9}, coffee:{hw:0.6, len:1, y0:-0.9, y1:0.9} };
 function add(type, lane, z, o) {
   o = o || {}; const d = DIM[type], x = type === 'scaffold' ? 0 : LANES[lane], y = o.y || 0;
@@ -1196,7 +1252,7 @@ function reset() {
   for (const e of ents) drop(e); for (const s of shots) scene.remove(s.m); for (const p of parts) scene.remove(p.m);
   ents = []; shots = []; parts = [];
   Object.assign(S, {mode:'play', dist:0, speed:11, slow:1, gap:70, sinceHit:9, pucks:3, kills:0, tokens:0, shake:0, cool:0, banner:2.8, lastD:-1, dying:0, nextRow:20});
-  Object.assign(P, {lane:1, x:0, y:0, vy:0, ground:true, jumps:0, slide:0, slideDur:0, slideHold:false, slideQ:false, inv:0, swing:0, phase:0});
+  Object.assign(P, {lane:1, x:0, y:0, vy:0, ground:true, jumps:0, slide:0, slideDur:0, slideHold:false, slideQ:-9, inv:0, swing:0, phase:0});
   for (const b of buildings) skin(b); inters.forEach(setInter);
   $('title').hidden = true; $('over').hidden = true; $('hud').hidden = false; $('pause').textContent = 'Pause';
 }
@@ -1226,8 +1282,10 @@ function jump(down) {
 }
 function slide(down) {
   P.slideHold = down; if (S.mode !== 'play' || !down) return;
-  if (P.ground) { P.slide = 0.62; P.slideDur = 0; tone(200, 0.15, 'triangle', 0.05, 120); }
-  else { P.vy = Math.min(P.vy, -12); P.slideQ = true; }
+  if (P.ground) startSlide();
+  else { P.vy = Math.min(P.vy, -14); P.slideQ = S.t; } // pressed in the air: drop fast and slide on landing, held or not
+}
+function startSlide() { P.slide = 1.0; P.slideDur = 0; tone(200, 0.15, 'triangle', 0.05, 120);
 }
 function shoot() {
   if (S.mode !== 'play' || S.cool > 0) return;
@@ -1280,12 +1338,15 @@ function update(dt) {
   const tx = LANES[P.lane], step = 15 * dt; P.x += clamp(tx - P.x, -step, step);
   if (!P.ground) {
     P.vy -= 19 * dt; P.y += P.vy * dt;
-    if (P.y <= 0) { P.y = 0; P.vy = 0; P.ground = true; P.jumps = 0; if (S.t - (P.jumpQ || -9) < 0.18) { P.jumpQ = -9; jump(true); } else if (P.slideQ && P.slideHold) { P.slide = 0.62; P.slideDur = 0; } P.slideQ = false; }
+    if (P.y <= 0) { P.y = 0; P.vy = 0; P.ground = true; P.jumps = 0; if (S.t - (P.jumpQ || -9) < 0.18) { P.jumpQ = -9; jump(true); } else if (S.t - P.slideQ < 0.7) startSlide(); P.slideQ = -9; }
   }
   if (P.ground && S.t - (P.splashT || 0) > (P.slide > 0 ? 0.07 : 0.15) && inPuddle(P.x, 0)) { P.splashT = S.t; splash(P.x, P.slide > 0 ? -0.6 : 0); }
   for (const r of ripples) { r.t += dt; r.m.position.z += dz; const k = r.t / 0.55; r.m.scale.setScalar(0.15 + k * 0.9); r.m.material.opacity = 0.7 * (1 - k); if (k >= 1) { scene.remove(r.m); r.m.material.dispose(); } }
   for (let i = ripples.length - 1; i >= 0; i--) if (ripples[i].t >= 0.55) ripples.splice(i, 1);
-  if (P.slide > 0) { P.slide -= dt; P.slideDur += dt; if (P.slide <= 0.08 && P.slideHold && P.slideDur < 1.25) P.slide = 0.08; }
+  if (P.slide > 0) { P.slide -= dt; P.slideDur += dt;
+    if (P.slide <= 0.08) { // stay low while scaffolding is still overhead or just ahead, or while the key is held
+      const reach = Math.max(3, v * 0.3), under = ents.some(e => e.type === 'scaffold' && !e.hit && e.z > -reach && e.z < 1.2);
+      if (under || (P.slideHold && P.slideDur < 1.6)) P.slide = 0.08; } }
 
   if (S.dist >= S.nextRow) spawnRow();
 
@@ -1309,7 +1370,7 @@ function update(dt) {
     else if (e.type === 'puck' || e.type === 'coffee') { e.mesh.position.y = e.y + Math.sin(S.t * 4 + e.ph) * 0.12; e.mesh.rotation.y += dt * 2; }
     e.z += dz; e.mesh.position.z = e.z;
     if (e.hit) continue;
-    const pad = e.hint ? 0.12 : 0.4, half = e.len / 2 + pad + dz;
+    const pad = e.type === 'scaffold' ? 0 : e.hint ? 0.12 : 0.4, half = e.len / 2 + pad + dz; // scaffolding only counts once the plank is overhead
     if (e.hint && e.z > hintZ && e.z < -3 && !e.flee && (e.type === 'scaffold' || (e.type === 'cyclist' ? e.z > -38 && Math.abs(e.x) < 8 : Math.abs(e.x - LANES[P.lane]) < e.hw + 0.3))) { hintZ = e.z; hint = e.who ? 'Stun or dodge' : e.type === 'zombie' && S.pucks <= 0 ? 'Dodge' : e.hint; }
     if (e.z < -half || e.z > half || Math.abs(P.x - e.x) > e.hw + (e.hint ? 0.18 : 0.4) || P.y >= e.y1 || P.y + ph <= e.y0) continue;
     if (e.type === 'token') { e.hit = e.gone = true; S.tokens++; tone(1200, 0.07, 'square', 0.03, 1700); }
@@ -1352,7 +1413,7 @@ function render() {
     const e = S.t - storm.t, f = e < 0.6 ? Math.sin(e / 0.6 * Math.PI) * Math.exp(-e * 4) : 0;
     hemi.intensity = 0.16 + f * 1.5; skyMat.uniforms.uFlash.value = f; }
   sigMat.color.copy(Math.sin(S.t * 5) > 0 ? SIG_ON : SIG_OFF); { const k = Math.sin(S.t * 11) > 0; polA.color.copy(k ? POL_R : POL_OFF); polB.color.copy(k ? POL_OFF : POL_B); }
-  far.userData.beacon.visible = Math.sin(S.t * 3) > 0; blinkMat.color.copy(Math.sin(S.t * 8) > 0 ? BLINK_ON : BLINK_OFF);
+  far.userData.beacon.visible = Math.sin(S.t * 3) > 0; updateTower(S.t, fogCol); blinkMat.color.copy(Math.sin(S.t * 8) > 0 ? BLINK_ON : BLINK_OFF);
 
   const playing = S.mode !== 'title';
   player.position.set(P.x, P.y, 0);
@@ -1439,7 +1500,7 @@ $('mute').addEventListener('click', e => { S.muted = !S.muted; e.currentTarget.t
 document.addEventListener('visibilitychange', () => { if (document.hidden && S.mode === 'play') togglePause(); });
 
 // test hook: lets an automated check read state and jump ahead
-window.__hogtown = {S, P, inPuddle, add, info: () => { const i = renderer.info.render; return {calls:i.calls, tris:i.triangles}; }, ents: () => ents, reskin: () => { buildings.forEach(skin); inters.forEach(setInter); }};
+window.__hogtown = {S, P, inPuddle, add, slide, jump, info: () => { const i = renderer.info.render; return {calls:i.calls, tris:i.triangles}; }, ents: () => ents, reskin: () => { buildings.forEach(skin); inters.forEach(setInter); }};
 
 resize(); for (const b of buildings) skin(b);
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { for (const k in signTex) delete signTex[k]; for (const k in storeTex) delete storeTex[k]; makeBoards(); buildings.forEach(skin); inters.forEach(setInter); });
