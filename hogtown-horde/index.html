@@ -129,7 +129,7 @@ button:focus-visible{outline:3px solid var(--sodium);outline-offset:2px}
   <div class="overlay" id="title">
     <div class="card">
       <div class="blade"><small>Downtown Toronto</small><h1>Hogtown Horde</h1></div>
-      <p id="intro">The city has fallen and the horde is right behind you. Run from Union Station through downtown and north up Yonge to Eglinton. Every stumble lets them close in.</p>
+      <p id="intro">The city has fallen and the horde is right behind you. Run from Union Station through downtown and north up Yonge to Thornhill. Every stumble lets them close in.</p>
       <dl class="keys">
         <dt>Switch lanes</dt><dd>Left and Right, or A and D. Swipe sideways on a phone.</dd>
         <dt>Jump</dt><dd>Space or Up. Press again in the air for extra height.</dd>
@@ -185,6 +185,8 @@ const DISTRICTS = [
   {name:'Rosedale', street:'Crescent Rd', streets:['Crescent Rd','Glen Rd','South Dr'], car:'', noTram:true, north:true, sky:[70,82,64]},
   {name:'Midtown', street:'St Clair Ave W', streets:['St Clair Ave W','Yonge St','Heath St W'], car:'512 ST CLAIR', north:true, sky:[96,86,62]},
   {name:'Uptown', street:'Yonge St', streets:['Yonge St','Eglinton Ave W','Roehampton Ave'], car:'5 EGLINTON', north:true, sky:[104,80,64]},
+  {name:'North York Centre', street:'Yonge St', streets:['Yonge St','Sheppard Ave W','Park Home Ave'], car:'', noTram:true, north:true, sky:[96,82,70]},
+  {name:'Thornhill', street:'Yonge St', streets:['Yonge St','Centre St','Steeles Ave W'], car:'', noTram:true, north:true, sky:[86,84,66]},
 ];
 const NDIST = DISTRICTS.length;
 const dIndex = m => ((Math.floor(m / DLEN) % NDIST) + NDIST) % NDIST, LOOP = NDIST * DLEN;
@@ -751,7 +753,7 @@ const neonMat = new T.MeshBasicMaterial({color:0xffffff});
 const trimRound = roundify(trimMat.clone(), 0.05);
 const railMat = new T.MeshStandardMaterial({color:C(0x9fc4c8), transparent:true, opacity:0.3, roughness:0.08, metalness:0.3, envMapIntensity:1.6, depthWrite:false});
 const newKit = h => ({box:[], cyl:[], gd:[], l0:[], l1:[], neon:[], rail:[], single:[], h});
-const finish = B => ({singles:B.single, h:B.h, signs:B.signs || [], shop:!!B.shop, glow:B.glow || 0, photos:B.photos || [], inst:[bake(B.neon, BOX, neonMat, false, 3.4), bake(B.box, BOX, trimRound), bake(B.rail, BOX, railMat), bake(B.cyl, CYL, trimMat), bake(B.gd, PLANE, winMat, true), bake(B.l0, PLANE, litMats[0], true), bake(B.l1, PLANE, litMats[1], true)].filter(Boolean)});
+const finish = B => ({front:B.front || 0, singles:B.single, h:B.h, signs:B.signs || [], shop:!!B.shop, glow:B.glow || 0, photos:B.photos || [], inst:[bake(B.neon, BOX, neonMat, false, 3.4), bake(B.box, BOX, trimRound), bake(B.rail, BOX, railMat), bake(B.cyl, CYL, trimMat), bake(B.gd, PLANE, winMat, true), bake(B.l0, PLANE, litMats[0], true), bake(B.l1, PLANE, litMats[1], true)].filter(Boolean)});
 function instKit(k) {
   const g = new T.Group();
   for (const q of k.singles) { const m = new T.Mesh(q.geo, q.mat); m.position.fromArray(q.p); if (q.s) m.scale.fromArray(q.s); g.add(m); }
@@ -845,6 +847,20 @@ function mansion(col, stoneWall, leaf) { // Rosedale: a big brick or stone house
   { const t = makeTree(Math.floor(hh(col) * 40) + 1, {h:11, r:0.3, leaves:11}); B.single.push({geo:t.wood, mat:barkMat, p:[2.3, 0, W / 2 - 2.0]}, {geo:t.leaves, mat:leafMat, p:[2.3, 0, W / 2 - 2.0]}); }
   return finish(B);
 }
+function plaza(o) {
+  const B = newKit(6), W = BW, SB = 8.5, D = BD + 2 - SB, H = 5.4, sb = W / 3;
+  B.front = SB; B.single.push({geo:rwall(D, H, W, 0.3), mat:o.wall, p:[SB + D / 2, H / 2, 0]});
+  B.box.push([SB / 2, 0.02, 0, SB, 0.04, W, 0x24272e]);
+  for (let z = -W / 2 + 1.4; z < W / 2; z += 2.7) B.box.push([SB / 2 + 0.9, 0.045, z, 4.6, 0.02, 0.1, 0xd8d8d0]);
+  for (let i = 0; i < 3; i++) { const z = -W / 2 + (i + 0.5) * sb; glassAt(B, SB - 0.02, 1.55, z, sb - 0.7, 2.7, 0.8); B.box.push([SB - 0.05, 0.2, z, 0.14, 0.4, sb - 0.5, 0x2a2c32]); }
+  for (let i = 0; i <= 3; i++) B.box.push([SB - 0.1, 1.6, clamp(-W / 2 + i * sb, -W / 2 + 0.2, W / 2 - 0.2), 0.3, 3.2, 0.35, 0x8a8478]);
+  B.box.push([SB - 0.16, 4.35, 0, 0.32, 1.1, W, o.band || 0x2a2c32], [SB - 0.95, 3.4, 0, 1.9, 0.16, W, 0x3a3d44]);
+  B.neon.push([SB - 1.88, 3.3, 0, 0.05, 0.04, W, 0xfff0dc]);
+  B.signs = [0, 1, 2].map(i => ({x:SB - 0.34, y:4.35, z:-W / 2 + (i + 0.5) * sb, w:sb - 0.4, h:0.86}));
+  B.cyl.push([SB * 0.42, 3.6, -W / 2 + 2, 0.08, 7.2, 0.08, 0x3a3f4a]); B.neon.push([SB * 0.42 - 0.45, 7.2, -W / 2 + 2, 0.9, 0.1, 0.32, 0xfff0dc]);
+  B.box.push([0.7, 3.2, W / 2 - 1.2, 0.45, 6.4, 0.5, 0x2a2c32], [0.7, 5.3, W / 2 - 1.2, 0.5, 2.0, 2.2, 0x1c1e24]); B.neon.push([0.43, 6.33, W / 2 - 1.2, 0.04, 0.05, 2.2, o.pylon || 0xff4030]);
+  B.shop = true; B.glow = 0xffe0b0; return finish(B);
+}
 function tower(o) {
   const B = newKit(o.H), W = BW, bw = W / 4, rad = o.balc ? 2.6 : 1.5, body = o.H - 7.2, hMain = body * 0.8, hUp = body - hMain, top = 7.2 + hMain;
   B.single.push({geo:rwall(BD, hMain, W, rad, 1 / W, 1 / body), mat:o.mat, p:[BD / 2, 7.2 + hMain / 2, 0]}, {geo:rwall(BD * 0.78, hUp, W * 0.8, rad * 0.8, 1 / W, 1 / body), mat:o.mat, p:[BD / 2 + BD * 0.1, top + hUp / 2, 0]},
@@ -921,6 +937,9 @@ const KITS = [
    () => tower({balc:true, H:64, mat:facade('#14181f', '#22303e', '#cfe4ff', 8, 26, 0.16), base:stoneW, fin:0x5a6270})],
   [() => tower({balc:true, photoBase:{img:'uptown-keg', w:6.4, h:4.78, z:3.0}, H:98, mat:facade('#0f1a22', '#1c3040', '#bfe8ff', 9, 34, 0.24), base:darkPanel, fin:0x9aa2b0}), () => masonry({H:20, bays:4, floorH:3.6, wall:darkPanel, trim:0x4a5260, frame:0x9aa2b0, lit:0.3, ribbon:true, shop:{sign:0x14161c}, neon:[0x40d0ff, 0xff40c0]}),
    () => tower({balc:true, H:78, mat:facade('#161b24', '#1d2940', '#ffe0b0', 8, 28, 0.2), base:stoneW, fin:0x3a4250})],
+  [() => tower({balc:true, H:118, mat:facade('#101a24', '#1c3040', '#cfe8ff', 9, 40, 0.24), base:darkPanel, fin:0x9aa2b0}), () => tower({balc:true, H:96, mat:facade('#14181f', '#22303e', '#ffe0b0', 8, 32, 0.2), base:stoneW, fin:0x5a6270}),
+   () => masonry({H:13, bays:4, floorH:3.2, wall:conc, trim:0x5d6068, frame:0x1c1e22, lit:0.34, ribbon:true, shop:{sign:0x1c1e24, awning:0x8a1c1c}, neon:[0xff5a3a, 0x40d0ff]})],
+  [() => plaza({wall:wallMat('concrete', 0xd0c8b8), pylon:0xff4030}), () => plaza({wall:wallMat('panel', 0xb8b0a0), band:0x1c2a3a, pylon:0x40a0ff}), () => houses([0x7a5a48, 0x5e6a5a]), () => tower({balc:true, H:84, mat:facade('#161b24', '#1d2940', '#ffe0b0', 8, 28, 0.2), base:stoneW, fin:0x3a4250})],
 ].map(list => list.map(f => f()));
 // storefront names, lettered in each shop's familiar colours
 const STORES = [
@@ -936,7 +955,11 @@ const STORES = [
   [['Loblaws', '#f4f4f0', '#d0141c'], ['Shoppers Drug Mart', '#f4f4f0', '#d0202a'], ['Tim Hortons', '#c8102e', '#fff', 'script'], ['LCBO', '#12332a', '#fff'], ['Scotiabank', '#ec111a', '#fff'],
    ['Second Cup', '#2a1a12', '#f2e6c8', 'serif'], ['Swiss Chalet', '#c8141c', '#f2d030', 'serif'], ['Pizza Pizza', '#f26a1c', '#fff'], ['Summerhill Market', '#1c2a1c', '#f2e6c8', 'serif']],
   [['Yonge Eglinton Centre', '#101216', '#fff'], ['Cineplex', '#0c1c3a', '#f2c84a'], ['Indigo', '#f4f4f0', '#1a1a1a', 'serif'], ['Tim Hortons', '#c8102e', '#fff', 'script'], ['Sporting Life', '#111', '#fff'],
-   ['Pizza Pizza', '#f26a1c', '#fff'], ['Shoppers Drug Mart', '#f4f4f0', '#d0202a'], ['The Rose and Crown', '#1a2a1a', '#f2c84a', 'serif'], ['Second Cup', '#2a1a12', '#f2e6c8', 'serif']]
+   ['Pizza Pizza', '#f26a1c', '#fff'], ['Shoppers Drug Mart', '#f4f4f0', '#d0202a'], ['The Rose and Crown', '#1a2a1a', '#f2c84a', 'serif'], ['Second Cup', '#2a1a12', '#f2e6c8', 'serif']],
+  [['Empress Walk', '#101216', '#fff'], ['Meridian Arts Centre', '#0c1c3a', '#f2c84a', 'serif'], ['North York Central Library', '#1c2a1c', '#f2e6c8', 'serif'], ['H Mart', '#d0141c', '#fff'], ['Owl of Minerva', '#1a1a1a', '#f2c84a'],
+   ['Tim Hortons', '#c8102e', '#fff', 'script'], ['Shoppers Drug Mart', '#f4f4f0', '#d0202a'], ['Pizza Pizza', '#f26a1c', '#fff'], ['Cineplex', '#0c1c3a', '#f2c84a'], ['Korean BBQ', '#14081c', '#ff5ac8']],
+  [['Centerpoint Mall', '#0c1c3a', '#fff'], ['Galleria Supermarket', '#c8141c', '#fff'], ['Dollarama', '#f2d030', '#1c3f8c'], ['Tim Hortons', '#c8102e', '#fff', 'script'], ['Swiss Chalet', '#c8141c', '#f2d030', 'serif'],
+   ['LCBO', '#12332a', '#fff'], ['Shoppers Drug Mart', '#f4f4f0', '#d0202a'], ['Pizza Pizza', '#f26a1c', '#fff'], ['Canadian Tire', '#d0141c', '#fff'], ['The Promenade', '#1a1a1a', '#f2e6c8', 'serif']]
 ];
 const storeTex = {}, TAG = {'Tim Hortons':'Always Fresh', 'Pizza Pizza':'967-11-11', 'Swiss Chalet':'Rotisserie & Grill', 'Horseshoe Tavern':'Since 1947', 'Massey Hall':'Est. 1894', "Honest Ed's":'Bargain Centre', 'Second Cup':'Coffee Co.', 'The Bay':'Est. 1670', 'LCBO':'Wine · Beer · Spirits', 'Shoppers Drug Mart':'Pharmacy', 'Eaton Centre':'Toronto', "King's Noodle":'BBQ · Congee · Noodle', 'El Mocambo':'Live Music', 'Global Cheese':'Kensington Market', 'Zanzibar':'Tavern'};
 function storeMat(st, carved) { // a sign face: carved stone, neon tubing on a dark panel, or a backlit cabinet
@@ -996,9 +1019,9 @@ function skin(b) {
     sg.material = storeMat(st, !!q.carved); sg.scale.set(w, q.h, 1); sg.position.set(b.side * (kx + q.x - out), q.y, q.z);
     cab.scale.set(0.2, q.h + 0.1, w + 0.12); cab.position.set(b.side * (kx + q.x - 0.06), q.y, q.z); });
   const proj = shown && !!first && d >= 2 && hh(b.serial * 2.9) > 0.2; b.blade.visible = b.bladeBox.visible = b.arm.visible = proj; // sign hung out over the sidewalk, facing the runner
-  if (proj) { const y = kit.shop ? 4.8 : 4.05, x = b.side * (kx - 1.55), z = SLOT * 0.28; b.blade.material = storeMat(first, false); b.blade.scale.set(2.3, 0.43, 1); b.blade.position.set(x, y, z + 0.085);
-    b.bladeBox.scale.set(2.42, 0.55, 0.16); b.bladeBox.position.set(x, y, z); b.arm.scale.set(1.7, 0.06, 0.06); b.arm.position.set(b.side * (kx - 0.8), y + 0.31, z); }
-  b.open.visible = shown && kit.shop && hh(b.serial * 5.3) > 0.3; if (b.open.visible) b.open.position.set(b.side * (kx - 0.09), 2.55, -SLOT / 3 + 1.0);
+  if (proj) { const y = kit.shop ? 4.8 : 4.05, x = b.side * (kx + kit.front - 1.55), z = SLOT * 0.28; b.blade.material = storeMat(first, false); b.blade.scale.set(2.3, 0.43, 1); b.blade.position.set(x, y, z + 0.085);
+    b.bladeBox.scale.set(2.42, 0.55, 0.16); b.bladeBox.position.set(x, y, z); b.arm.scale.set(1.7, 0.06, 0.06); b.arm.position.set(b.side * (kx + kit.front - 0.8), y + 0.31, z); }
+  b.open.visible = shown && kit.shop && hh(b.serial * 5.3) > 0.3; if (b.open.visible) b.open.position.set(b.side * (kx + kit.front - 0.09), 2.55, -SLOT / 3 + 1.0);
   b.photos.forEach((ph, i) => { const q = kit.photos[i]; ph.visible = shown && !!q; if (ph.visible) { ph.material = q.mat; ph.scale.set(q.w, q.h, 1); ph.position.set(b.side * (kx + q.x), q.y, b.side * q.z); } });
   b.spill.visible = shown && kit.shop;
   b.halo.visible = shown && !!kit.glow; if (b.halo.visible) { const hh2 = Math.min(kit.h, 13); b.halo.material.color.copy(C(kit.glow)); b.halo.position.set(b.side * (kx - 1.6), hh2 * 0.5, 0); b.halo.scale.set(17, hh2 * 1.7, 1); }
@@ -1352,7 +1375,7 @@ function buildCoyote(g) { // lean, long-legged, bushy tail, eyes that catch the 
   const bg = geoCache.coyote || (geoCache.coyote = loft('coyRaw', [[-0.46, 0.06, 0.07], [-0.32, 0.105, 0.125], [0, 0.115, 0.135], [0.26, 0.125, 0.155], [0.42, 0.1, 0.125], [0.5, 0.055, 0.07]], 12).clone().rotateX(-Math.PI / 2));
   const bm = new T.Mesh(bg, fur); bm.position.y = 0.56; body.add(bm);
   rod(body, 0.065, [0, 0.62, -0.42], [0, 0.76, -0.6], fur); sph(body, 0.085, 0.08, 0.105, fur, 0, 0.8, -0.65); sph(body, 0.042, 0.04, 0.095, lt, 0, 0.77, -0.78); sph(body, 0.02, 0.02, 0.02, dk, 0, 0.78, -0.87);
-  for (const k of [-1, 1]) { cyl(body, 0.035, 0.11, fur, k * 0.055, 0.91, -0.62, 0.004); sph(body, 0.022, 0.02, 0.014, emit(0xdcff90, 8), k * 0.042, 0.82, -0.735); glow(body, 0xdcff90, 0.42, k * 0.042, 0.82, -0.76, 0.9); }
+  for (const k of [-1, 1]) { cyl(body, 0.035, 0.11, fur, k * 0.055, 0.91, -0.62, 0.004); sph(body, 0.02, 0.018, 0.012, gloss(0x16120a), k * 0.042, 0.82, -0.735); }
   sph(body, 0.1, 0.09, 0.2, lt, 0, 0.5, -0.3); // pale chest
   rod(body, 0.05, [0, 0.58, 0.44], [0, 0.4, 0.86], fur); sph(body, 0.05, 0.05, 0.07, dk, 0, 0.39, 0.88);
   const legs = []; for (const [x, z] of [[-0.08, -0.32], [0.08, -0.32], [-0.08, 0.3], [0.08, 0.3]]) { const l = new T.Group(); l.position.set(x, 0.5, z); cyl(l, 0.028, 0.48, fur, 0, -0.24, 0); sph(l, 0.035, 0.025, 0.05, dk, 0, -0.48, -0.02); body.add(l); legs.push(l); }
@@ -1364,7 +1387,10 @@ function buildCyclist(g, o) {
     for (let k = 0; k < 6; k++) { const a = k * 1.047; rod(bike, 0.004, [0, 0.34, z], [0, 0.34 + Math.sin(a) * 0.33, z + Math.cos(a) * 0.33], gloss(0x9aa0aa)); } }
   rod(bike, 0.02, [0, 0.36, 0.1], [0, 0.94, 0.22], fr); rod(bike, 0.02, [0, 0.9, 0.2], [0, 0.9, -0.36], fr); rod(bike, 0.022, [0, 0.36, 0.1], [0, 0.86, -0.36], fr); rod(bike, 0.016, [0, 0.36, 0.1], [0, 0.34, 0.54], fr); rod(bike, 0.016, [0, 0.9, 0.2], [0, 0.34, 0.54], fr);
   rod(bike, 0.018, [0, 0.34, -0.54], [0, 1.04, -0.38], fr); rod(bike, 0.016, [-0.26, 1.05, -0.38], [0.26, 1.05, -0.38], dk); rbox(bike, 0.13, 0.05, 0.26, 0.04, dk, 0, 0.97, 0.24); cyl(bike, 0.085, 0.02, gloss(0x9aa0aa), 0, 0.36, 0.1).rotation.z = Math.PI / 2;
-  sph(bike, 0.035, 0.035, 0.03, emit(0xffffff, 6), 0, 0.98, -0.42); glow(bike, 0xe8f0ff, 1.3, 0, 0.98, -0.5, 0.5); sph(bike, 0.03, 0.03, 0.02, blinkMat, 0, 0.78, 0.5);
+  cyl(bike, 0.042, 0.075, 0x15171c, 0, 0.98, -0.43).rotation.x = Math.PI / 2; sph(bike, 0.033, 0.033, 0.012, emit(0xfff4e0, 5), 0, 0.98, -0.468); glow(bike, 0xfff0d8, 0.3, 0, 0.98, -0.5, 0.55);
+  const beam = new T.Mesh(PLANE, mats.bikeBeam || (mats.bikeBeam = new T.MeshBasicMaterial({map:glowTex, color:C(0xfff0d8, 0.8), blending:T.AdditiveBlending, transparent:true, opacity:0.32, depthWrite:false})));
+  beam.rotation.x = -Math.PI / 2; beam.scale.set(1.5, 3.4, 1); beam.position.set(0, 0.03, -2.4); bike.add(beam);
+  rbox(bike, 0.05, 0.035, 0.03, 0.012, 0x15171c, 0, 0.82, 0.51); sph(bike, 0.02, 0.014, 0.008, emit(0xff2010, 4), 0, 0.82, 0.527); glow(bike, 0xff3020, 0.22, 0, 0.82, 0.55, 0.45);
   const r = person({civ:true, skin:0xd9a47c, top:o.top || 0xd8e020, legs:0x23262e, helmet:o.helmet}); r.position.set(0, 0.06, 0.16); g.add(r); g.userData.rider = r;
 }
 const DIM = { cone:{hw:0.62, len:0.5, y0:0, y1:0.48, hint:'Jump'}, bin:{hw:0.55, len:0.7, y0:0, y1:0.62, hint:'Jump'}, barrier:{hw:1.0, len:0.4, y0:0, y1:0.68, hint:'Jump'},
@@ -1383,7 +1409,7 @@ function zombie(lane, z, fast) { const d = dIndex(S.dist - z); add('zombie', lan
 function spawnRow() {
   const d = Math.min(1, S.dist / 1500), z = SPAWN_Z, easy = S.dist < 160, here = DISTRICTS[dIndex(S.dist - z)], label = here.car;
   const opts = easy ? [['single', 3], ['zomb', 2], ['scaf', 1.5], ['low3', 1]] :
-    [['single', 2], ['low3', 2], ['scaf', 2], ['tram', 1.6 + d], ['cars', 1.5 + d], ['zomb', 2.5], ['zline', d * 1.5], ['runner', d * 2], ['combo', d * 1.8 + 0.3], ['coyotes', S.dist > 220 ? (1.1 + d) * (here.name === 'Rosedale' ? 3 : 1) : 0], ['cyclist', S.dist > 180 ? 1.4 : 0], ['celeb', S.dist > 260 ? 0.9 : 0]];
+    [['single', 2], ['low3', 2], ['scaf', 2], ['tram', 1.6 + d], ['cars', 1.5 + d], ['zomb', 2.5], ['zline', d * 1.5], ['runner', d * 2], ['combo', d * 1.8 + 0.3], ['coyotes', S.dist > 220 ? (1.1 + d) * (here.name === 'Rosedale' ? 3 : here.name === 'Thornhill' ? 2 : 1) : 0], ['cyclist', S.dist > 180 ? 1.4 : 0], ['celeb', S.dist > 260 ? 0.9 : 0]];
   let tot = 0; for (const o of opts) tot += o[1];
   let r = Math.random() * tot, p = opts[0][0]; for (const o of opts) { if ((r -= o[1]) <= 0) { p = o[0]; break; } }
   if (here.noTram && (p === 'tram' || p === 'combo')) p = 'cars';
@@ -1479,7 +1505,7 @@ function scroll(dz) {
 
   for (const l of lights) l.shaft.visible = l.on && l.g.position.z > -80;
   for (const it of inters) { it.g.position.z += dz; if (it.g.position.z > 14) { it.g.position.z -= 270; it.serial += 3; setInter(it); } }
-  for (const v of vents) { v.g.position.z += dz; if (v.g.position.z > 14) v.g.position.z -= 208; v.g.visible = [0, 1, 2, 3, 6, 8, 9].includes(dIndex(S.dist - v.g.position.z));
+  for (const v of vents) { v.g.position.z += dz; if (v.g.position.z > 14) v.g.position.z -= 208; v.g.visible = [0, 1, 2, 3, 6, 8, 9, 10].includes(dIndex(S.dist - v.g.position.z));
     if (v.g.visible) v.puffs.forEach((sm, k) => { const t = (S.t * 0.3 + k / 10 + v.ph) % 1, sc = 0.8 + t * 3.0; sm.position.set(Math.sin(t * 5 + k) * 0.3 - v.side * t * 0.9, 0.25 + t * 4.6, Math.sin(k * 2.1) * 1.2 + t * 0.7); sm.scale.set(sc, sc * 1.15, 1); sm.material.opacity = Math.sin(t * Math.PI) * 0.55 * (1 - t * 0.35); sm.material.rotation = k + t * 0.8; }); }
   for (const q of props) { q.g.position.z += dz; if (q.g.position.z > 14) { q.g.position.z -= 14 * 15.5; q.serial += 14; q.g.remove(q.g.children[0]); q.g.add(PROPS[Math.floor(hh(q.serial * 3.7) * PROPS.length)].clone()); } }
   for (const g of lanterns) { g.position.z += dz; if (g.position.z > 12) g.position.z -= 180; g.visible = dIndex(S.dist - g.position.z) === 4; }
