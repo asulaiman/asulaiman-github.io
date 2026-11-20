@@ -51,6 +51,10 @@ canvas{display:block;width:100%;height:100%;touch-action:none;background:var(--n
 .pucks p{margin:0;display:flex;gap:4px}
 .pucks p s{width:11px;height:10px;border-radius:3px;background:var(--rail)}
 .pucks p s.on{background:var(--bone)}
+.cmark{transform:translate(-50%,-100%);font:800 15px var(--display);letter-spacing:.08em;color:#14100a;background:var(--sodium);padding:2px 9px;border-radius:3px;white-space:nowrap;box-shadow:0 0 16px rgba(255,179,71,.75);animation:cpulse .5s ease-in-out infinite alternate}
+.cmark::after{content:"";position:absolute;left:50%;top:100%;margin-left:-7px;border:7px solid transparent;border-top-color:var(--sodium)}
+@keyframes cpulse{from{opacity:.75}to{opacity:1}}
+@media (prefers-reduced-motion: reduce){.cmark{animation:none}}
 .top{position:absolute;top:8px;right:8px;display:flex;gap:6px}
 @media (max-width:560px){.where{top:46px}.dist{top:40px}}
 
@@ -425,19 +429,21 @@ const far = new T.Group(); scene.add(far);
 const towerU = {uLed:{value:new T.Color()}, uHaze:{value:new T.Color()}};
 const TOWER_GLSL = `vec3 hazed(vec3 c, float y, vec3 hz){ float k = 0.6 * exp(-y / 120.0) + 0.1; return mix(c, mix(hz, vec3(0.03, 0.082, 0.072), smoothstep(0.0, 350.0, y)), k); }`;
 const TOWER_VS = 'attribute float edge; varying vec3 vN; varying float vY; varying float vE; varying vec2 vUv; void main(){ vN = normalize(mat3(modelMatrix) * normal); vec4 w = modelMatrix * vec4(position, 1.0); vY = w.y; vE = edge; vUv = uv; gl_Position = projectionMatrix * viewMatrix * w; }';
-const towerMat = new T.ShaderMaterial({fog:false, uniforms:towerU, vertexShader:TOWER_VS, fragmentShader:`uniform vec3 uLed, uHaze; varying vec3 vN; varying float vY; varying float vE; ${TOWER_GLSL}
+const towerMat = new T.ShaderMaterial({fog:false, extensions:{derivatives:true}, uniforms:towerU, vertexShader:TOWER_VS, fragmentShader:`uniform vec3 uLed, uHaze; varying vec3 vN; varying float vY; varying float vE; ${TOWER_GLSL}
   void main(){ vec3 n = normalize(vN); float key = 0.45 + 0.55 * max(dot(n, normalize(vec3(-0.35, 0.2, 0.9))), 0.0);
-    vec3 c = vec3(0.05, 0.05, 0.055) * key + uLed * key * (0.5 + 0.5 * smoothstep(0.0, 260.0, vY)) + uLed * pow(vE, 8.0) * 1.6;
+    vec3 c = vec3(0.05, 0.05, 0.055) * key + uLed * key * (0.5 + 0.5 * smoothstep(0.0, 260.0, vY)) + uLed * smoothstep(0.55, 1.0, vE) * 0.9;
     gl_FragColor = vec4(hazed(c, vY, uHaze), 1.0);
     #include <tonemapping_fragment>
     #include <encodings_fragment>
   }`});
-const podMat = (b1, b2) => new T.ShaderMaterial({fog:false, uniforms:{uLed:towerU.uLed, uHaze:towerU.uHaze, uB:{value:new T.Vector4(b1[0], b1[1], b2[0], b2[1])}}, vertexShader:TOWER_VS.replace('attribute float edge; ', '').replace('vE = edge; ', ''),
+const podMat = (b1, b2) => new T.ShaderMaterial({fog:false, extensions:{derivatives:true}, uniforms:{uLed:towerU.uLed, uHaze:towerU.uHaze, uB:{value:new T.Vector4(b1[0], b1[1], b2[0], b2[1])}}, vertexShader:TOWER_VS.replace('attribute float edge; ', '').replace('vE = edge; ', ''),
   fragmentShader:`uniform vec3 uLed, uHaze; uniform vec4 uB; varying vec3 vN; varying float vY; varying float vE; varying vec2 vUv; ${TOWER_GLSL}
   float h1(float x){ return fract(sin(x * 91.37) * 43758.5453); }
   void main(){ vec3 n = normalize(vN);
-    float gl = max(step(uB.x, vY) * step(vY, uB.y), step(uB.z, vY) * step(vY, uB.w)), cell = floor(vUv.x * 132.0), mull = step(0.17, fract(vUv.x * 132.0));
-    float lit = mix(0.22, 1.0, step(0.32, h1(cell + step(uB.z, vY) * 17.0)));
+    float fy = fwidth(vY) + 0.001, x = vUv.x * 132.0, fx = fwidth(x) + 0.001, far = smoothstep(0.35, 0.9, fx); // filter detail that is smaller than a pixel
+    float band = max(smoothstep(uB.x - fy, uB.x + fy, vY) * (1.0 - smoothstep(uB.y - fy, uB.y + fy, vY)), smoothstep(uB.z - fy, uB.z + fy, vY) * (1.0 - smoothstep(uB.w - fy, uB.w + fy, vY)));
+    float gl = band, cell = floor(x), mull = mix(smoothstep(0.17 - fx, 0.17 + fx, fract(x)), 0.83, far);
+    float lit = mix(mix(0.22, 1.0, step(0.32, h1(cell + step(uB.z, vY) * 17.0))), 0.75, far);
     vec3 glass = mix(vec3(0.01, 0.013, 0.017), vec3(1.0, 0.74, 0.46) * 1.5 * lit, mull);
     float key = 0.3 + 0.55 * max(dot(n, normalize(vec3(-0.35, 0.35, 0.9))), 0.0);
     vec3 conc = vec3(0.5, 0.51, 0.53) * key * 0.5 + uLed * (0.18 + 1.5 * max(-n.y, 0.0));
@@ -445,6 +451,26 @@ const podMat = (b1, b2) => new T.ShaderMaterial({fog:false, uniforms:{uLed:tower
     #include <tonemapping_fragment>
     #include <encodings_fragment>
   }`});
+function loftSmooth(rings, edges) { // indexed loft: shared vertices give smooth shading round the outline
+  const n = rings[0].pts.length, pos = [], ed = [], uv = [], idx = [];
+  rings.forEach((r, i) => r.pts.forEach((q, j) => { pos.push(q[0], r.y, q[1]); ed.push(edges[j]); uv.push(j / n, i / (rings.length - 1)); }));
+  for (let i = 0; i < rings.length - 1; i++) for (let j = 0; j < n; j++) { const a = i * n + j, b = i * n + (j + 1) % n, c = a + n, d = b + n; idx.push(a, c, b, b, c, d); }
+  const g = new T.BufferGeometry(); g.setAttribute('position', new T.Float32BufferAttribute(pos, 3)); g.setAttribute('edge', new T.Float32BufferAttribute(ed, 1)); g.setAttribute('uv', new T.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals();
+  const N3 = g.attributes.normal; let sgn = 0; for (let v = 0; v < n; v++) sgn += N3.getX(v) * pos[v * 3] + N3.getZ(v) * pos[v * 3 + 2];
+  if (sgn < 0) { for (let t = 0; t < idx.length; t += 3) { const x = idx[t + 1]; idx[t + 1] = idx[t + 2]; idx[t + 2] = x; } g.setIndex(idx); g.computeVertexNormals(); }
+  return g;
+}
+function yOutline(q) { // rounded leg noses joined by smooth concave flanks
+  const pts = [], ed = [], TIP = 11, FL = 12;
+  for (let k = 0; k < 3; k++) {
+    const a = Math.PI / 2 + k * 2.0944, b = a + 2.0944, r = q.w / 2, cx = Math.cos(a) * (q.L - r), cz = Math.sin(a) * (q.L - r);
+    for (let i = 0; i < TIP; i++) { const t = -Math.PI / 2 + Math.PI * i / (TIP - 1), u = a + t; pts.push([cx + Math.cos(u) * r, cz + Math.sin(u) * r]); ed.push(Math.pow(Math.cos(t), 2)); }
+    const s1 = [cx + Math.cos(a + Math.PI / 2) * r, cz + Math.sin(a + Math.PI / 2) * r], bx = Math.cos(b) * (q.L - r), bz = Math.sin(b) * (q.L - r);
+    const s2 = [bx + Math.cos(b - Math.PI / 2) * r, bz + Math.sin(b - Math.PI / 2) * r], rv = valleyR(q), m = [Math.cos(a + 1.0472) * rv, Math.sin(a + 1.0472) * rv];
+    for (let i = 1; i < FL; i++) { const t = i / FL, w0 = (1 - t) * (1 - t), w1 = 2 * t * (1 - t), w2 = t * t; pts.push([s1[0] * w0 + m[0] * w1 + s2[0] * w2, s1[1] * w0 + m[1] * w1 + s2[1] * w2]); ed.push(0); }
+  }
+  return {pts, ed};
+}
 function loftRings(rings, edges) { // flat-shaded prism through a stack of same-length outlines
   const pos = [], ed = [], n = rings[0].pts.length;
   for (let i = 0; i < rings.length - 1; i++) { const A = rings[i], B = rings[i + 1];
@@ -459,18 +485,15 @@ const cnTower = new T.Group(), TX = -70, TZ = -760, LEG_TOP = 335; cnTower.posit
 const legAt = h => { const t = h / LEG_TOP, rc = lerp(8.5, 6.2, t); return {rc, L:rc + 11.5 * Math.pow(1 - t, 1.5), w:lerp(8, 6.4, t)}; };
 const valleyR = q => Math.max(q.w / Math.sqrt(3), q.rc * 0.8);
 (() => {
-  const rings = [];
-  for (let i = 0; i <= 24; i++) { const h = LEG_TOP * i / 24, q = legAt(h), pts = [];
-    for (let k = 0; k < 3; k++) { const a = Math.PI / 2 + k * 2.0944, dx = Math.cos(a), dz = Math.sin(a), px = -dz, pz = dx, rv = valleyR(q);
-      pts.push([dx * q.L - px * q.w / 2, dz * q.L - pz * q.w / 2], [dx * q.L + px * q.w / 2, dz * q.L + pz * q.w / 2], [Math.cos(a + 1.0472) * rv, Math.sin(a + 1.0472) * rv]); }
-    rings.push({y:h, pts}); }
-  cnTower.add(new T.Mesh(loftRings(rings, [1, 1, 0.3, 1, 1, 0.3, 1, 1, 0.3]), towerMat));
-  const up = []; for (const [h, r] of [[LEG_TOP - 4, 6.4], [452, 4.3]]) { const pts = []; for (let k = 0; k < 6; k++) { const a = k * 1.0472 + Math.PI / 6; pts.push([Math.cos(a) * r, Math.sin(a) * r]); } up.push({y:h, pts}); }
-  cnTower.add(new T.Mesh(loftRings(up, [0.5, 0.5, 0.5, 0.5, 0.5, 0.5]), towerMat));
-  const lathe = (pts, mat) => cnTower.add(new T.Mesh(new T.LatheGeometry(pts.map(q => new T.Vector2(q[0], q[1])), 72), mat));
+  const rings = []; let eds = null;
+  for (let i = 0; i <= 48; i++) { const h = LEG_TOP * i / 48, o = yOutline(legAt(h)); eds = o.ed; rings.push({y:h, pts:o.pts}); }
+  cnTower.add(new T.Mesh(loftSmooth(rings, eds), towerMat));
+  const up = []; for (let i = 0; i <= 8; i++) { const h = lerp(LEG_TOP - 4, 452, i / 8), r = lerp(6.4, 4.3, i / 8), pts = []; for (let k = 0; k < 32; k++) { const a = k / 32 * Math.PI * 2; pts.push([Math.cos(a) * r, Math.sin(a) * r]); } up.push({y:h, pts}); }
+  cnTower.add(new T.Mesh(loftSmooth(up, new Array(32).fill(0)), towerMat));
+  const lathe = (pts, mat) => cnTower.add(new T.Mesh(new T.LatheGeometry(pts.map(q => new T.Vector2(q[0], q[1])), 128), mat));
   lathe([[6.6, 320], [9, 326], [14, 330.5], [19, 333.6], [22.4, 336.2], [23.2, 338.4], [22.4, 340.5], [20.2, 341.3], [21, 341.6], [22.6, 346.4], [22.2, 346.8], [22.2, 349.6], [20.6, 350], [21.3, 354], [22, 354.4], [21.6, 355.6], [17, 357.6], [10, 359.6], [6, 361]], podMat([341.6, 346.4], [350, 354]));
   lathe([[4.3, 440], [5.6, 442.6], [6.6, 443.6], [6.8, 448.6], [6.1, 449.6], [4.8, 451.4], [3.4, 452.6]], podMat([443.7, 448.5], [0, 0]));
-  const mast = new T.CylinderGeometry(0.55, 2.7, 98, 8, 1, true); mast.setAttribute('edge', new T.Float32BufferAttribute(new Float32Array(mast.attributes.position.count), 1));
+  const mast = new T.CylinderGeometry(0.55, 2.7, 98, 24, 1, true); mast.setAttribute('edge', new T.Float32BufferAttribute(new Float32Array(mast.attributes.position.count), 1));
   const m = new T.Mesh(mast, towerMat); m.position.y = 503; cnTower.add(m); cyl(cnTower, 3.6, 5, 0x1a1c22, 0, 454, 0);
   for (const y of [470, 492, 515, 535]) { const r = lerp(2.7, 0.55, (y - 454) / 98) + 0.25; for (let k = 0; k < 3; k++) { const a = k * 2.0944; const b = new T.Mesh(new T.SphereGeometry(0.7, 6, 6), emit(0xff3020, 3, true)); b.position.set(Math.cos(a) * r, y, Math.sin(a) * r); cnTower.add(b); } }
   far.userData.beacon = new T.Mesh(new T.SphereGeometry(1.6, 8, 8), emit(0xff3b2f, 7, true)); far.userData.beacon.position.set(TX, 553, TZ); far.add(far.userData.beacon);
@@ -1114,7 +1137,7 @@ function build(type, o) {
       const br = cyl(g, 0.035, 10.3, pipe, 0, 3.65, 0.6); br.rotation.z = 1.42; const b2 = cyl(g, 0.035, 10.3, pipe, 0, 3.65, -0.6); b2.rotation.z = -1.42; break; }
     case 'zombie': { const w = o.who && WHO[o.who], z = person({zombie:true, who:o.who, skin:w ? w.skin : o.fast ? 0xa9b878 : 0x8a9c74, top:w ? w.top : o.top, legs:w ? w.legs : 0x2b2f3a, tie:o.tie || o.who === 'ford'}); z.rotation.y = Math.PI; g.add(z); g.userData.z = z;
       if (w) { const tg = nameTag(w.name); tg.position.y = o.who === 'chow' ? 2.15 : 2.4; g.add(tg); } break; }
-    case 'coyote': buildCoyote(g); g.rotation.y = Math.PI; break;
+    case 'coyote': buildCoyote(g); g.rotation.y = Math.PI; g.scale.setScalar(2.2); break;
     case 'cyclist': buildCyclist(g, o); g.rotation.y = o.dir > 0 ? -Math.PI / 2 : Math.PI / 2; break;
     case 'token': { const c = cyl(g, 0.26, 0.06, emit(0xe8b93a, 1.8), 0, 0, 0); c.rotation.x = Math.PI / 2; const i = cyl(g, 0.12, 0.07, bas(0x9a7418), 0, 0, 0); i.rotation.x = Math.PI / 2; break; }
     case 'puck': cyl(g, 0.3, 0.16, 0x0b0d12, 0, 0, 0); cyl(g, 0.3, 0.02, 0x4a505c, 0, 0.09, 0); glow(g, 0xffb347, 2.2, 0, 0, 0, 0.6); break;
@@ -1180,14 +1203,17 @@ function nameTag(name) {
   const sp = new T.Sprite(m); sp.scale.set(1.55, 0.47, 1); return sp;
 }
 function buildCoyote(g) { // lean, long-legged, bushy tail, eyes that catch the light
-  const fur = lam(0x8a7556), dk = lam(0x4a3c2c), lt = lam(0xc4b494), body = new T.Group(); g.add(body);
+  const fur = lam(0xc4a272), dk = lam(0x5a4632), lt = lam(0xf0e6cc), body = new T.Group(); g.add(body);
   const bg = geoCache.coyote || (geoCache.coyote = loft('coyRaw', [[-0.46, 0.06, 0.07], [-0.32, 0.105, 0.125], [0, 0.115, 0.135], [0.26, 0.125, 0.155], [0.42, 0.1, 0.125], [0.5, 0.055, 0.07]], 12).clone().rotateX(-Math.PI / 2));
   const bm = new T.Mesh(bg, fur); bm.position.y = 0.56; body.add(bm);
   rod(body, 0.065, [0, 0.62, -0.42], [0, 0.76, -0.6], fur); sph(body, 0.085, 0.08, 0.105, fur, 0, 0.8, -0.65); sph(body, 0.042, 0.04, 0.095, lt, 0, 0.77, -0.78); sph(body, 0.02, 0.02, 0.02, dk, 0, 0.78, -0.87);
-  for (const k of [-1, 1]) { cyl(body, 0.035, 0.11, fur, k * 0.055, 0.91, -0.62, 0.004); sph(body, 0.014, 0.014, 0.01, emit(0xdcff90, 3.5), k * 0.042, 0.82, -0.735); }
+  for (const k of [-1, 1]) { cyl(body, 0.035, 0.11, fur, k * 0.055, 0.91, -0.62, 0.004); sph(body, 0.022, 0.02, 0.014, emit(0xdcff90, 8), k * 0.042, 0.82, -0.735); glow(body, 0xdcff90, 0.42, k * 0.042, 0.82, -0.76, 0.9); }
+  sph(body, 0.1, 0.09, 0.2, lt, 0, 0.5, -0.3); // pale chest
   rod(body, 0.05, [0, 0.58, 0.44], [0, 0.4, 0.86], fur); sph(body, 0.05, 0.05, 0.07, dk, 0, 0.39, 0.88);
   const legs = []; for (const [x, z] of [[-0.08, -0.32], [0.08, -0.32], [-0.08, 0.3], [0.08, 0.3]]) { const l = new T.Group(); l.position.set(x, 0.5, z); cyl(l, 0.028, 0.48, fur, 0, -0.24, 0); sph(l, 0.035, 0.025, 0.05, dk, 0, -0.48, -0.02); body.add(l); legs.push(l); }
   g.userData.legs = legs; g.userData.body = body;
+  const pool = new T.Mesh(PLANE, mats.coyPool || (mats.coyPool = new T.MeshBasicMaterial({map:glowTex, color:C(0xffb347, 0.9), blending:T.AdditiveBlending, transparent:true, opacity:0.55, depthWrite:false})));
+  pool.rotation.x = -Math.PI / 2; pool.scale.set(1.5, 2.2, 1); pool.position.y = 0.03; g.add(pool);
 }
 function buildCyclist(g, o) {
   const fr = gloss(o.col || 0x2a6ea8), dk = lam(0x111318), bike = new T.Group(); g.add(bike);
@@ -1200,7 +1226,7 @@ function buildCyclist(g, o) {
 }
 const DIM = { cone:{hw:0.62, len:0.5, y0:0, y1:0.48, hint:'Jump'}, bin:{hw:0.55, len:0.7, y0:0, y1:0.62, hint:'Jump'}, barrier:{hw:1.0, len:0.4, y0:0, y1:0.68, hint:'Jump'},
   pit:{hw:0.8, len:1.8, y0:-1, y1:0.06, hint:'Jump'}, car:{hw:0.9, len:4.0, y0:0, y1:1.1, hint:'Jump or dodge'}, tram:{hw:1.2, len:15, y0:0, y1:3.4, hint:'Switch lanes'},
-  scaffold:{hw:5.2, len:0.8, y0:1.0, y1:4.5, hint:'Slide'}, zombie:{hw:0.32, len:0.6, y0:0, y1:1.8, hint:'Shoot or dodge'}, coyote:{hw:0.3, len:1.1, y0:0, y1:0.8, hint:'Jump or shoot'}, cyclist:{hw:0.95, len:0.5, y0:0, y1:1.7, hint:'Cyclist! Switch lanes'},
+  scaffold:{hw:5.2, len:0.8, y0:1.0, y1:4.5, hint:'Slide'}, zombie:{hw:0.32, len:0.6, y0:0, y1:1.8, hint:'Shoot or dodge'}, coyote:{hw:0.55, len:2.2, y0:0, y1:1.45, hint:'Coyote! Jump or shoot'}, cyclist:{hw:0.95, len:0.5, y0:0, y1:1.7, hint:'Cyclist! Switch lanes'},
   token:{hw:0.55, len:0.8, y0:-0.5, y1:0.5}, puck:{hw:0.6, len:1, y0:-0.9, y1:0.9}, coffee:{hw:0.6, len:1, y0:-0.9, y1:0.9} };
 function add(type, lane, z, o) {
   o = o || {}; const d = DIM[type], x = type === 'scaffold' ? 0 : LANES[lane], y = o.y || 0;
@@ -1229,7 +1255,7 @@ function spawnRow() {
     case 'zomb': zombie(easy ? P.lane : a, z, false); if (!easy && Math.random() < 0.5) zombie(b, z - rnd(0, 4), false); len = 5; break;
     case 'zline': for (const l of order) zombie(l, z - rnd(0, 1.5), false); len = 4; break;
     case 'runner': zombie(P.lane, z, true); break;
-    case 'coyotes': { const n = 1 + Math.floor(Math.random() * (1.4 + d * 1.6)); for (let k = 0; k < n; k++) add('coyote', order[k], z - k * rnd(2.5, 5), {vs:rnd(6, 8.5)}); len = 10; break; }
+    case 'coyotes': { const n = 1 + Math.floor(Math.random() * (1.4 + d * 1.6)); for (let k = 0; k < n; k++) add('coyote', order[k], z - k * rnd(3, 6), {vs:rnd(4.5, 6.5)}); len = 10; break; }
     case 'cyclist': { const dir = Math.random() < 0.5 ? 1 : -1, e = add('cyclist', 1, z, {dir, col:pick([0x2a6ea8, 0xb3261c, 0x2f8a4a, 0x8a8f9a]), top:pick([0xd8e020, 0xe8731c, 0x38b0c8]), helmet:pick([0xe8e8e4, 0x1c1e24, 0xc4221a])}); e.x = -dir * 7.4; e.mesh.position.x = e.x;
       if (d > 0.5 && Math.random() < 0.4) { const f = add('cyclist', 1, z - 7, {dir:-dir, col:0x8a8f9a, top:0xe8731c}); f.x = dir * 7.4; f.mesh.position.x = f.x; } if (tok) tokens(a, z + 6, 4, false); len = 8; break; }
     case 'celeb': { const who = ['ford', 'drake', 'chow'][(S.celebN = (S.celebN || 0) + 1) % 3], e = add('zombie', a, z, {who, vs:rnd(1, 1.6)}); if (who === 'ford') e.hw = 0.52; if (tok) tokens(b, z, 5, false); len = 5; break; }
@@ -1359,6 +1385,7 @@ function update(dt) {
       if (e.stun > 0) e.stun -= dt; else e.z += e.vs * dt; if (e.fast && e.z < -6) { const sx = 2.6 * dt; e.x += clamp(P.x - e.x, -sx, sx); e.mesh.position.x = e.x; }
       pose(e.mesh.userData.z, e.stun > 0 ? e.ph : S.t * (e.fast ? 14 : 6) + e.ph); if (e.who) e.mesh.userData.z.rotation.x = e.stun > 0 ? 0.35 : 0;
     } else if (e.type === 'coyote') {
+      if (!e.howled && e.z > -78) { e.howled = true; tone(500, 0.5, 'sine', 0.05, 900); setTimeout(() => tone(880, 0.7, 'sine', 0.04, 560), 380); if (S.t - (S.toastT || -9) > 2) { S.toast = 'Coyotes on the street!'; S.toastT = S.t; } }
       if (e.flee) { e.x += e.flee * 9 * dt; e.z -= 4 * dt; e.mesh.position.x = e.x; e.mesh.rotation.y = Math.PI - e.flee * 1.1; if (Math.abs(e.x) > 9) e.gone = true; }
       else { e.z += e.vs * dt; e.x += Math.sin(S.t * 2.2 + e.ph) * 0.5 * dt; e.mesh.position.x = e.x; }
       const u = e.mesh.userData, ph = S.t * 17 + e.ph; u.legs[0].rotation.x = Math.sin(ph) * 0.95; u.legs[1].rotation.x = Math.sin(ph + 0.5) * 0.95; u.legs[2].rotation.x = Math.sin(ph + 2.6) * 0.95; u.legs[3].rotation.x = Math.sin(ph + 3.1) * 0.95; u.body.position.y = Math.abs(Math.sin(ph)) * 0.07; u.body.rotation.x = Math.sin(ph) * 0.06;
@@ -1402,6 +1429,14 @@ function stepParts(dt) {
 const fogCol = new T.Color(), camX = {v:0}, BLINK_ON = C(0xffb347, 5), BLINK_OFF = C(0x6b4a1c);
 const hudCache = {};
 function setText(id, v) { if (hudCache[id] !== v) { hudCache[id] = v; $(id).textContent = v; } }
+const cmarks = [0, 1, 2, 3].map(() => { const d = document.createElement('div'); d.className = 'cmark'; d.textContent = 'COYOTE'; d.hidden = true; $('hud').appendChild(d); return d; }), cmV = new T.Vector3();
+function placeCoyoteMarks() {
+  const st = $('stage'), W = st.clientWidth, H = st.clientHeight, placed = []; let n = 0;
+  if (S.mode === 'play' || S.mode === 'paused') for (const e of ents) if (e.type === 'coyote' && !e.flee && e.z > -90 && e.z < -3 && n < cmarks.length) {
+    cmV.set(e.x, 2.9, e.z).project(camera); if (cmV.z > 1 || Math.abs(cmV.x) > 1.1) continue; const x = (cmV.x + 1) / 2 * W, y = (1 - cmV.y) / 2 * H;
+    if (placed.some(q => Math.abs(q[0] - x) < 84 && Math.abs(q[1] - y) < 30)) continue; placed.push([x, y]); const el = cmarks[n++]; el.hidden = false; el.style.left = x.toFixed(1) + 'px'; el.style.top = y.toFixed(1) + 'px'; }
+  for (; n < cmarks.length; n++) cmarks[n].hidden = true;
+}
 const puckEls = []; for (let k = 0; k < 9; k++) { const s = document.createElement('s'); $('hPucks').appendChild(s); puckEls.push(s); }
 function render() {
   // district colour, cross-faded over the last 10% of each district
@@ -1433,6 +1468,7 @@ function render() {
   if (composer) { finalPass.uniforms.uTime.value = S.t % 60; finalPass.uniforms.uDanger.value = S.mode !== 'title' && S.gap < 40 ? (1 - S.gap / 40) * (0.7 + 0.3 * Math.sin(S.t * 8)) : 0; composer.render(); }
   else renderer.render(scene, camera);
 
+  placeCoyoteMarks();
   if (!playing) return;
   const dd = DISTRICTS[d];
   setText('hDist', Math.floor(S.dist).toLocaleString() + ' m');
