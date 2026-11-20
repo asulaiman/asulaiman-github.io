@@ -51,10 +51,6 @@ canvas{display:block;width:100%;height:100%;touch-action:none;background:var(--n
 .pucks p{margin:0;display:flex;gap:4px}
 .pucks p s{width:11px;height:10px;border-radius:3px;background:var(--rail)}
 .pucks p s.on{background:var(--bone)}
-.cmark{transform:translate(-50%,-100%);font:800 15px var(--display);letter-spacing:.08em;color:#14100a;background:var(--sodium);padding:2px 9px;border-radius:3px;white-space:nowrap;box-shadow:0 0 16px rgba(255,179,71,.75);animation:cpulse .5s ease-in-out infinite alternate}
-.cmark::after{content:"";position:absolute;left:50%;top:100%;margin-left:-7px;border:7px solid transparent;border-top-color:var(--sodium)}
-@keyframes cpulse{from{opacity:.75}to{opacity:1}}
-@media (prefers-reduced-motion: reduce){.cmark{animation:none}}
 .top{position:absolute;top:8px;right:8px;display:flex;gap:6px}
 @media (max-width:560px){.where{top:46px}.dist{top:40px}}
 
@@ -133,7 +129,7 @@ button:focus-visible{outline:3px solid var(--sodium);outline-offset:2px}
   <div class="overlay" id="title">
     <div class="card">
       <div class="blade"><small>Downtown Toronto</small><h1>Hogtown Horde</h1></div>
-      <p id="intro">The city has fallen and the horde is right behind you. Run the streetcar tracks from Union Station to Kensington Market. Every stumble lets them close in.</p>
+      <p id="intro">The city has fallen and the horde is right behind you. Run from Union Station through downtown and north up Yonge to Eglinton. Every stumble lets them close in.</p>
       <dl class="keys">
         <dt>Switch lanes</dt><dd>Left and Right, or A and D. Swipe sideways on a phone.</dd>
         <dt>Jump</dt><dd>Space or Up. Press again in the air for extra height.</dd>
@@ -185,8 +181,13 @@ const DISTRICTS = [
   {name:'Yonge & Dundas', street:'Yonge St', streets:['Yonge St','Dundas St E','Shuter St'], car:'505 DUNDAS', sky:[110,80,60]},
   {name:'Chinatown', street:'Spadina Ave', streets:['Spadina Ave','Dundas St W','Huron St'], car:'510 SPADINA', sky:[116,78,44]},
   {name:'Kensington Market', street:'Augusta Ave', streets:['Augusta Ave','Baldwin St','Nassau St'], car:'506 CARLTON', sky:[96,84,52]},
+  {name:'Yorkville', street:'Yorkville Ave', streets:['Yorkville Ave','Bellair St','Bloor St W'], car:'', noTram:true, north:true, sky:[94,84,66]},
+  {name:'Rosedale', street:'Crescent Rd', streets:['Crescent Rd','Glen Rd','South Dr'], car:'', noTram:true, north:true, sky:[70,82,64]},
+  {name:'Midtown', street:'St Clair Ave W', streets:['St Clair Ave W','Yonge St','Heath St W'], car:'512 ST CLAIR', north:true, sky:[96,86,62]},
+  {name:'Uptown', street:'Yonge St', streets:['Yonge St','Eglinton Ave W','Roehampton Ave'], car:'5 EGLINTON', north:true, sky:[104,80,64]},
 ];
-const dIndex = m => ((Math.floor(m / DLEN) % 6) + 6) % 6;
+const NDIST = DISTRICTS.length;
+const dIndex = m => ((Math.floor(m / DLEN) % NDIST) + NDIST) % NDIST, LOOP = NDIST * DLEN;
 const hh = n => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
 const lerp = (a, b, t) => a + (b - a) * t;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -424,6 +425,17 @@ const far = new T.Group(); scene.add(far);
   far.traverse(m => { if (m.material) { m.material.transparent = true; m.material.opacity = 0.3; } }); // the skyline sits deep in the haze
 })();
 
+const farN = new T.Group(); farN.visible = false; scene.add(farN);
+(() => {
+  const mk = (wall, lit, p) => new T.MeshBasicMaterial({fog:false, transparent:true, opacity:0.4, color:new T.Color(1.15, 1.15, 1.2), map:canvasTex(128, 256, (g, w, h) => {
+    g.fillStyle = wall; g.fillRect(0, 0, w, h); const cols = 8, rows = 48, cw = w / cols, ch = h / rows;
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) if (Math.random() < p) { g.globalAlpha = 0.35 + Math.random() * 0.65; g.fillStyle = lit; g.fillRect(c * cw + 1, r * ch + 1, cw - 2, ch - 2); } g.globalAlpha = 1; })});
+  const M = [mk('#0a1820', '#bfeee8', 0.2), mk('#14171d', '#ffd9a0', 0.16), mk('#1a2230', '#e8f0ff', 0.18), mk('#0c1018', '#ffe0b0', 0.22)];
+  const tw = (x, z, w, d, h, m, round) => { const b = new T.Mesh(round ? new T.CylinderGeometry(w / 2, w / 2, h, 20) : BOX, m); if (!round) b.scale.set(w, h, d); b.position.set(x, h / 2, z); farN.add(b); return b; };
+  tw(-12, -780, 30, 30, 205, M[0]); tw(26, -790, 26, 26, 180, M[0], true); tw(60, -770, 32, 26, 150, M[2]); tw(-52, -760, 28, 24, 140, M[1]); tw(96, -800, 26, 26, 168, M[3]); tw(-90, -790, 24, 24, 120, M[2], true);
+  for (let i = 0; i < 46; i++) { const x = -620 + i * 28 + hh(i * 5.3) * 12; if (Math.abs(x) < 130) continue; const h = 30 + hh(i * 2.1) * (Math.abs(x) < 300 ? 110 : 50), w = 16 + hh(i + 4) * 16; tw(x, -760 - hh(i * 3.3) * 120, w, w, h, M[i % 4]); }
+  for (const x of [-12, 26]) { const b = new T.Mesh(new T.SphereGeometry(1.4, 8, 8), emit(0xff3b2f, 5, true)); b.position.set(x, x < 0 ? 207 : 182, x < 0 ? -780 : -790); farN.add(b); }
+})();
 /* CN Tower: Y-shaped tapering concrete shaft, main pod with its white radome ring and two lit glass decks,
    the slimmer upper shaft and SkyPod, then the antenna mast; washed in LED colour as it is at night */
 const towerU = {uLed:{value:new T.Color()}, uHaze:{value:new T.Color()}};
@@ -568,7 +580,7 @@ function splash(x, z) {
 for (const s of [-1, 1]) box(scene, 0.3, 0.16, 416, 0x6a6e78, s * 4.95, 0.08, -188);
 road.rotation.x = -Math.PI / 2; road.position.set(0, 0, -188); scene.add(road);
 const skirt = new T.Mesh(new T.PlaneGeometry(400, 416), bas(0x12151c)); skirt.rotation.x = -Math.PI / 2; skirt.position.set(0, -0.05, -188); scene.add(skirt);
-box(scene, 0.04, 0.04, 416, bas(0x0a0c12), 0, 5.6, -188); // overhead contact wire
+const tramWire = box(scene, 0.04, 0.04, 416, bas(0x0a0c12), 0, 5.6, -188); // overhead contact wire
 
 /* ---------- buildings ---------- */
 function facade(wall, dim, lit, cols, rows, p, extra) {
@@ -718,6 +730,22 @@ function photoFront(o) { // o.panels: [{img, glow, w, h, z}] in metres, bottom e
   B.photos = o.panels.map(q => ({mat:photoMatFor(q.img, q.glow, q.gain || 1.7), x:-0.07, y:y0 + q.h / 2, w:q.w, h:q.h, z:q.z || 0})); B.shop = true; B.glow = o.glowCol || 0xffc890;
   return finish(B);
 }
+function mansion(col, stoneWall, leaf) { // Rosedale: a big brick or stone house set back behind a lawn, hedge and tree
+  const B = newKit(13), W = BW, SB = 5.4, H = 8.8, D = BD - SB, white = 0xe8e4da, wall = wallMat(stoneWall ? 'stone' : 'brickRed', col), roof = lam(0x2a2826);
+  B.single.push({geo:ubox(D, H, W - 1.6), mat:wall, p:[SB + D / 2, H / 2, 0]}, {geo:gableGeo(W - 0.6, 4.4, D + 0.6), mat:roof, p:[SB + D / 2, H, 0]});
+  B.box.push([SB - 0.12, H + 0.1, 0, 0.5, 0.26, W - 0.4, white], [SB + 0.25, H + 2.2, 0, 0.12, 4.0, 0.12, white]);
+  for (const f of [0, 1]) for (let i = 0; i < 4; i++) { const z = -W / 2 + 1.9 + i * (W - 3.8) / 3; if (f === 0 && (i === 1 || i === 2)) continue; windowAt(B, 2.1 + f * 3.4, z, 1.15, 1.8, {x:SB, frame:white, lit:0.5, sill:white, lintel:white}); }
+  windowAt(B, H + 1.5, 0, 1.0, 1.3, {x:SB, frame:white, lit:0.45, sill:white});
+  B.box.push([SB - 1.7, 3.05, 0, 3.4, 0.22, 4.4, white], [SB - 1.7, 0.18, 0, 3.4, 0.36, 4.4, 0x6a6862], [SB - 3.6, 0.1, 0, 0.6, 0.2, 2.4, 0x6a6862], [SB - 0.04, 1.5, 0, 0.12, 2.5, 1.3, 0x2a1e18]);
+  for (const k of [-1.9, -0.7, 0.7, 1.9]) B.cyl.push([SB - 3.1, 1.6, k, 0.11, 2.9, 0.11, white]);
+  B.neon.push([SB - 0.15, 2.95, 0.95, 0.14, 0.22, 0.14, 0xffd28a], [SB - 0.15, 2.95, -0.95, 0.14, 0.22, 0.14, 0xffd28a]);
+  for (const k of [-1, 1]) B.box.push([SB + 3, H + 2.6, k * (W / 2 - 1.6), 0.9, 4.4, 0.9, 0x6a3a30]);
+  B.box.push([SB / 2, 0.03, 0, SB, 0.06, W, 0x25331f], [SB / 2, 0.05, 0, SB, 0.05, 1.3, 0x5c5b56]);
+  for (const k of [-1, 1]) B.box.push([0.55, 0.6, k * (W / 4 + 0.4), 0.9, 1.2, W / 2 - 1.0, 0x1b2b19]);
+  B.cyl.push([2.4, 1.6, W / 2 - 2.0, 0.22, 3.2, 0.22, 0x2a211a]);
+  for (const [dx, dy, dz, r] of [[0, 4.6, 0, 1.9], [0.9, 4.0, 0.9, 1.4], [-0.8, 4.2, -0.7, 1.5], [0.2, 5.6, -0.4, 1.3]]) B.single.push({geo:SPH, mat:leaf, p:[2.4 + dx, dy, W / 2 - 2.0 + dz], s:[r, r * 0.85, r]});
+  return finish(B);
+}
 function tower(o) {
   const B = newKit(o.H), W = BW, bw = W / 4;
   B.single.push({geo:BOX, mat:o.mat, p:[BD / 2, o.H / 2 + 3.6, 0], s:[BD, o.H - 7.2, W]}, {geo:ubox(BD - 0.2, 7.2, W - 0.1), mat:o.base, p:[BD / 2 + 0.1, 3.6, 0]});
@@ -773,6 +801,7 @@ function makeBoards() {
 }
 makeBoards();
 const stoneW = wallMat('stone'), brickR = wallMat('brickRed'), brickB = wallMat('brickBrown'), conc = wallMat('concrete'), darkPanel = wallMat('panel', 0x3a4250, 0.5), paleStone = wallMat('stone', 0xd8d2c4);
+const leafA = lam(0x8a4a1c), leafB = lam(0x9a6a22), leafC = lam(0x5a3a1a);
 const KITS = [
   [colonnade, () => masonry({H:22, bays:5, floorH:3.7, wall:stoneW, trim:0x9a9488, frame:0x26282c, lit:0.22, pil:true, cornice:true}), () => masonry({H:28, bays:6, floorH:3.5, wall:paleStone, trim:0x8a8478, frame:0x26282c, lit:0.2, pil:true, cornice:true, tank:true})],
   [() => tower({H:78, mat:facade('#0f1724', '#1d2940', '#aad2f0', 9, 30, 0.12), base:stoneW, fin:0x8d97a6}), () => tower({H:58, mat:facade('#161b24', '#1d2940', '#aad2f0', 8, 24, 0.1), base:darkPanel, fin:0x3a4250}), () => tower({H:66, mat:facade('#33260f', '#6b5220', '#f0be50', 9, 26, 0.3), base:stoneW, fin:0x6a5430})],
@@ -782,6 +811,13 @@ const KITS = [
   [() => masonry({H:30, bays:4, floorH:3.6, wall:darkPanel, trim:0x565e6c, frame:0x9aa2b0, lit:0.3, ribbon:true, shop:{sign:0x14161c}, neon:[0xff40c0, 0x40d0ff]}), () => masonry({H:24, bays:5, floorH:3.5, wall:conc, trim:0x5d6068, frame:0x1c1e22, lit:0.28, ribbon:true, shop:{sign:0x7a1f6a}, neon:[0x40d0ff, 0xff40c0]}), () => masonry({H:38, bays:5, floorH:3.6, wall:darkPanel, trim:0x4a5260, frame:0x9aa2b0, lit:0.26, ribbon:true, shop:{sign:0x14161c}, neon:[0xff40c0, 0x40d0ff]})],
   [() => masonry({H:10.4, bays:4, floorH:3.0, wall:brickR, trim:0x8a8070, frame:0x2a1c18, lit:0.4, cornice:true, shop:{sign:0xc4281c, awning:0xa8201a}, neon:[0xff3a30, 0x30ffb0]}), () => masonry({H:13.4, bays:4, floorH:3.0, wall:brickB, trim:0x8a8070, frame:0x2a1c18, lit:0.36, cornice:true, escape:true, shop:{sign:0xd6a42a, awning:0xb88a1c}, neon:[0xffb030, 0xff3a30]}), () => masonry({H:10.4, bays:3, floorH:3.0, wall:brickR, trim:0x8a8070, frame:0xe0d8c8, lit:0.4, cornice:true, tank:true, shop:{sign:0x1f6b4a, awning:0xa8201a}, neon:[0x30ffb0, 0xff3a30]}), () => photoFront({H:9.4, y0:2.18, base:true, wall:brickB, neon:[0xff3a30, 0x30ffb0], glowCol:0xff5a40, panels:[{img:'chinatown-a', glow:true, w:BW, h:5.45}]})],
   [() => houses([0x8f4456, 0x347c82]), () => houses([0xbc8834, 0x56689c]), () => houses([0x64883e, 0xa8563a]), () => houses([0x4a6e9a, 0xc2b08a])],
+  [() => masonry({H:10.6, bays:3, floorH:3.0, wall:brickR, trim:0xe8e4da, frame:0x1c1e22, lit:0.45, cornice:true, shop:{sign:0x111214, awning:0x15171c}, neon:[0xfff0d8, 0]}), () => houses([0x4a3c36, 0x2f3a46]),
+   () => tower({H:86, mat:facade('#1a1d24', '#2a3240', '#ffe6c0', 9, 32, 0.22), base:paleStone, fin:0x8a8478})],
+  [() => mansion(0xffffff, false, leafA), () => mansion(0xd8d0c0, true, leafB), () => mansion(0xc8b8a8, false, leafC)],
+  [() => masonry({H:22, bays:5, floorH:3.4, wall:conc, trim:0x5d6068, frame:0x1c1e22, lit:0.26, ribbon:true, shop:{sign:0x1c2a3a}, neon:[0xffd28a, 0]}), () => masonry({H:16, bays:4, floorH:3.2, wall:brickB, trim:0x8a8070, frame:0x1c1e22, lit:0.32, cornice:true, shop:{sign:0x23262e, awning:0x2a3a5a}, neon:[0xffd28a, 0]}),
+   () => tower({H:64, mat:facade('#14181f', '#22303e', '#cfe4ff', 8, 26, 0.16), base:stoneW, fin:0x5a6270})],
+  [() => tower({H:98, mat:facade('#0f1a22', '#1c3040', '#bfe8ff', 9, 34, 0.24), base:darkPanel, fin:0x9aa2b0}), () => masonry({H:20, bays:4, floorH:3.6, wall:darkPanel, trim:0x4a5260, frame:0x9aa2b0, lit:0.3, ribbon:true, shop:{sign:0x14161c}, neon:[0x40d0ff, 0xff40c0]}),
+   () => tower({H:78, mat:facade('#161b24', '#1d2940', '#ffe0b0', 8, 28, 0.2), base:stoneW, fin:0x3a4250})],
 ].map(list => list.map(f => f()));
 // storefront names, lettered in each shop's familiar colours
 const STORES = [
@@ -791,6 +827,13 @@ const STORES = [
   [['Eaton Centre', '#101216', '#fff', 'serif'], ['Sam the Record Man', '#0a0a0a', '#ff2a2a', 'sam'], ['Zanzibar', '#14081c', '#ff5ac8', 'script'], ['Massey Hall', '#7a1414', '#f2e6c8', 'serif'], ['Tim Hortons', '#c8102e', '#fff', 'script'], ['Shoppers Drug Mart', '#f4f4f0', '#d0202a'], ['Pizza Pizza', '#f26a1c', '#fff'], ['Swiss Chalet', '#c8141c', '#f2d030', 'serif'], ['LCBO', '#12332a', '#fff'], ['Second Cup', '#2a1a12', '#f2e6c8', 'serif']],
   [["King's Noodle", '#c4281c', '#f2d36b'], ['Swatow', '#f2d36b', '#a8140e'], ['Rol San', '#12332a', '#f2d36b'], ['Dragon City', '#a8140e', '#f2d36b', 'serif'], ['Hua Sheng Supermarket', '#f4f4f0', '#c4281c'], ['El Mocambo', '#0a140c', '#58f08a', 'script'], ['Lucky Moose Food Mart', '#f2d36b', '#1c4f9c'], ["Mother's Dumplings", '#c4281c', '#fff', 'serif'], ['Pho Hung', '#1f6b4a', '#fff']],
   [['Blue Banana Market', '#1c4f9c', '#f2d030'], ['Global Cheese', '#f2d030', '#7a1414'], ['Courage My Love', '#5a1c5a', '#f2e6c8', 'script'], ["Sanagan's Meat Locker", '#f4f4f0', '#111', 'serif'], ['Seven Lives Tacos', '#12998a', '#fff'], ['Moonbean Coffee', '#2a1a12', '#f2e6c8', 'serif'], ["Tom's Place", '#16243c', '#fff', 'serif'], ["Honest Ed's", '#f2d030', '#d0141c', 'serif'], ["Jimmy's Coffee", '#111', '#fff', 'script'], ['Rasta Pasta', '#1f6b4a', '#f2d030']],
+  [['Holt Renfrew', '#0c0c0c', '#fff', 'serif'], ['Four Seasons', '#1a1612', '#e8d8b0', 'serif'], ['Sassafraz', '#1c2a1c', '#e8d8a8', 'script'], ['The Pilot', '#14161c', '#f2c84a', 'serif'], ['Hazelton Lanes', '#f4f2ec', '#1a1a1a', 'serif'],
+   ['Indigo', '#f4f4f0', '#1a1a1a', 'serif'], ['Over the Rainbow', '#16243c', '#fff'], ['Lettieri', '#2a1a12', '#f2e6c8', 'serif'], ['Royal Ontario Museum', '#101216', '#fff']],
+  [],
+  [['Loblaws', '#f4f4f0', '#d0141c'], ['Shoppers Drug Mart', '#f4f4f0', '#d0202a'], ['Tim Hortons', '#c8102e', '#fff', 'script'], ['LCBO', '#12332a', '#fff'], ['Scotiabank', '#ec111a', '#fff'],
+   ['Second Cup', '#2a1a12', '#f2e6c8', 'serif'], ['Swiss Chalet', '#c8141c', '#f2d030', 'serif'], ['Pizza Pizza', '#f26a1c', '#fff'], ['Summerhill Market', '#1c2a1c', '#f2e6c8', 'serif']],
+  [['Yonge Eglinton Centre', '#101216', '#fff'], ['Cineplex', '#0c1c3a', '#f2c84a'], ['Indigo', '#f4f4f0', '#1a1a1a', 'serif'], ['Tim Hortons', '#c8102e', '#fff', 'script'], ['Sporting Life', '#111', '#fff'],
+   ['Pizza Pizza', '#f26a1c', '#fff'], ['Shoppers Drug Mart', '#f4f4f0', '#d0202a'], ['The Rose and Crown', '#1a2a1a', '#f2c84a', 'serif'], ['Second Cup', '#2a1a12', '#f2e6c8', 'serif']]
 ];
 const storeTex = {}, TAG = {'Tim Hortons':'Always Fresh', 'Pizza Pizza':'967-11-11', 'Swiss Chalet':'Rotisserie & Grill', 'Horseshoe Tavern':'Since 1947', 'Massey Hall':'Est. 1894', "Honest Ed's":'Bargain Centre', 'Second Cup':'Coffee Co.', 'The Bay':'Est. 1670', 'LCBO':'Wine · Beer · Spirits', 'Shoppers Drug Mart':'Pharmacy', 'Eaton Centre':'Toronto', "King's Noodle":'BBQ · Congee · Noodle', 'El Mocambo':'Live Music', 'Global Cheese':'Kensington Market', 'Zanzibar':'Tavern'};
 function storeMat(st, carved) { // a sign face: carved stone, neon tubing on a dark panel, or a backlit cabinet
@@ -840,7 +883,7 @@ for (let i = 0; i < NB * 2; i++) {
 const CITY_HALL = 1250;
 function skin(b) {
   const wd = S.dist - b.g.position.z, d = dIndex(wd), r = hh(b.serial * 1.37 + b.side), kit = KITS[d][Math.floor(r * KITS[d].length)];
-  const ch = Math.floor(wd / 3000) * 3000 + CITY_HALL, shown = !(b.side < 0 && Math.abs(wd - ch) < 34), kx = 8.15 + r * 0.7;
+  const ch = Math.floor(wd / LOOP) * LOOP + CITY_HALL, shown = !(b.side < 0 && Math.abs(wd - ch) < 34), kx = 8.15 + r * 0.7;
   if (b.kit) b.g.remove(b.kit);
   b.kit = instKit(kit); b.kit.scale.x = b.side; b.kit.position.x = b.side * kx; b.kit.visible = shown; b.g.add(b.kit);
   let first = null;
@@ -1212,8 +1255,6 @@ function buildCoyote(g) { // lean, long-legged, bushy tail, eyes that catch the 
   rod(body, 0.05, [0, 0.58, 0.44], [0, 0.4, 0.86], fur); sph(body, 0.05, 0.05, 0.07, dk, 0, 0.39, 0.88);
   const legs = []; for (const [x, z] of [[-0.08, -0.32], [0.08, -0.32], [-0.08, 0.3], [0.08, 0.3]]) { const l = new T.Group(); l.position.set(x, 0.5, z); cyl(l, 0.028, 0.48, fur, 0, -0.24, 0); sph(l, 0.035, 0.025, 0.05, dk, 0, -0.48, -0.02); body.add(l); legs.push(l); }
   g.userData.legs = legs; g.userData.body = body;
-  const pool = new T.Mesh(PLANE, mats.coyPool || (mats.coyPool = new T.MeshBasicMaterial({map:glowTex, color:C(0xffb347, 0.9), blending:T.AdditiveBlending, transparent:true, opacity:0.55, depthWrite:false})));
-  pool.rotation.x = -Math.PI / 2; pool.scale.set(1.5, 2.2, 1); pool.position.y = 0.03; g.add(pool);
 }
 function buildCyclist(g, o) {
   const fr = gloss(o.col || 0x2a6ea8), dk = lam(0x111318), bike = new T.Group(); g.add(bike);
@@ -1238,11 +1279,12 @@ function tokens(lane, z, n, arc) { for (let k = 0; k < n; k++) { const u = n > 1
 const LOWS = ['cone', 'bin', 'barrier', 'pit'];
 function zombie(lane, z, fast) { const d = dIndex(S.dist - z); add('zombie', lane, z, {fast, vs: fast ? rnd(5, 7) : rnd(1, 2.2), top: d === 1 ? 0x3b4252 : pick(ZTOP), tie: d === 1}); }
 function spawnRow() {
-  const d = Math.min(1, S.dist / 1500), z = SPAWN_Z, easy = S.dist < 160, label = DISTRICTS[dIndex(S.dist - z)].car;
+  const d = Math.min(1, S.dist / 1500), z = SPAWN_Z, easy = S.dist < 160, here = DISTRICTS[dIndex(S.dist - z)], label = here.car;
   const opts = easy ? [['single', 3], ['zomb', 2], ['scaf', 1.5], ['low3', 1]] :
-    [['single', 2], ['low3', 2], ['scaf', 2], ['tram', 1.6 + d], ['cars', 1.5 + d], ['zomb', 2.5], ['zline', d * 1.5], ['runner', d * 2], ['combo', d * 1.8 + 0.3], ['coyotes', S.dist > 220 ? 1.1 + d : 0], ['cyclist', S.dist > 180 ? 1.4 : 0], ['celeb', S.dist > 260 ? 0.9 : 0]];
+    [['single', 2], ['low3', 2], ['scaf', 2], ['tram', 1.6 + d], ['cars', 1.5 + d], ['zomb', 2.5], ['zline', d * 1.5], ['runner', d * 2], ['combo', d * 1.8 + 0.3], ['coyotes', S.dist > 220 ? (1.1 + d) * (here.name === 'Rosedale' ? 3 : 1) : 0], ['cyclist', S.dist > 180 ? 1.4 : 0], ['celeb', S.dist > 260 ? 0.9 : 0]];
   let tot = 0; for (const o of opts) tot += o[1];
   let r = Math.random() * tot, p = opts[0][0]; for (const o of opts) { if ((r -= o[1]) <= 0) { p = o[0]; break; } }
+  if (here.noTram && (p === 'tram' || p === 'combo')) p = 'cars';
   const order = [0, 1, 2].sort(() => Math.random() - 0.5), [a, b, c] = order, tok = Math.random() < 0.6;
   const car = (l, zz) => { const k = Math.random(), kind = k < 0.16 ? 'taxi' : k < 0.28 ? 'police' : k < 0.5 ? 'suv' : 'sedan'; const e = add('car', l, zz, {kind, col: kind === 'taxi' ? 0xe8761c : kind === 'police' ? 0xe8e8e4 : pick([0x3f6f9a, 0x8a8f9a, 0x7a2f2f, 0x1c1e24, 0xc8ccd2, 0x2f4a3a]), skew: rnd(-0.12, 0.12)}); if (kind === 'suv') e.y1 = 1.4; return e; };
   let len = 2;
@@ -1335,13 +1377,13 @@ function scroll(dz) {
 
   for (const l of lights) l.shaft.visible = l.on && l.g.position.z > -80;
   for (const it of inters) { it.g.position.z += dz; if (it.g.position.z > 14) { it.g.position.z -= 270; it.serial += 3; setInter(it); } }
-  for (const v of vents) { v.g.position.z += dz; if (v.g.position.z > 14) v.g.position.z -= 208; v.g.visible = dIndex(S.dist - v.g.position.z) <= 3;
+  for (const v of vents) { v.g.position.z += dz; if (v.g.position.z > 14) v.g.position.z -= 208; v.g.visible = [0, 1, 2, 3, 6, 8, 9].includes(dIndex(S.dist - v.g.position.z));
     if (v.g.visible) v.puffs.forEach((sm, k) => { const t = (S.t * 0.3 + k / 10 + v.ph) % 1, sc = 0.8 + t * 3.0; sm.position.set(Math.sin(t * 5 + k) * 0.3 - v.side * t * 0.9, 0.25 + t * 4.6, Math.sin(k * 2.1) * 1.2 + t * 0.7); sm.scale.set(sc, sc * 1.15, 1); sm.material.opacity = Math.sin(t * Math.PI) * 0.55 * (1 - t * 0.35); sm.material.rotation = k + t * 0.8; }); }
   for (const q of props) { q.g.position.z += dz; if (q.g.position.z > 14) { q.g.position.z -= 14 * 15.5; q.serial += 14; q.g.remove(q.g.children[0]); q.g.add(PROPS[Math.floor(hh(q.serial * 3.7) * PROPS.length)].clone()); } }
   for (const g of lanterns) { g.position.z += dz; if (g.position.z > 12) g.position.z -= 180; g.visible = dIndex(S.dist - g.position.z) === 4; }
   stepRain(dz);
 
-  const lap = Math.floor((S.dist + 200) / 3000), chz = S.dist - (lap * 3000 + CITY_HALL);
+  const lap = Math.floor((S.dist + 200) / LOOP), chz = S.dist - (lap * LOOP + CITY_HALL);
   cityHall.position.z = chz; cityHall.visible = chz > -220 && chz < 60;
 }
 
@@ -1429,18 +1471,10 @@ function stepParts(dt) {
 const fogCol = new T.Color(), camX = {v:0}, BLINK_ON = C(0xffb347, 5), BLINK_OFF = C(0x6b4a1c);
 const hudCache = {};
 function setText(id, v) { if (hudCache[id] !== v) { hudCache[id] = v; $(id).textContent = v; } }
-const cmarks = [0, 1, 2, 3].map(() => { const d = document.createElement('div'); d.className = 'cmark'; d.textContent = 'COYOTE'; d.hidden = true; $('hud').appendChild(d); return d; }), cmV = new T.Vector3();
-function placeCoyoteMarks() {
-  const st = $('stage'), W = st.clientWidth, H = st.clientHeight, placed = []; let n = 0;
-  if (S.mode === 'play' || S.mode === 'paused') for (const e of ents) if (e.type === 'coyote' && !e.flee && e.z > -90 && e.z < -3 && n < cmarks.length) {
-    cmV.set(e.x, 2.9, e.z).project(camera); if (cmV.z > 1 || Math.abs(cmV.x) > 1.1) continue; const x = (cmV.x + 1) / 2 * W, y = (1 - cmV.y) / 2 * H;
-    if (placed.some(q => Math.abs(q[0] - x) < 84 && Math.abs(q[1] - y) < 30)) continue; placed.push([x, y]); const el = cmarks[n++]; el.hidden = false; el.style.left = x.toFixed(1) + 'px'; el.style.top = y.toFixed(1) + 'px'; }
-  for (; n < cmarks.length; n++) cmarks[n].hidden = true;
-}
 const puckEls = []; for (let k = 0; k < 9; k++) { const s = document.createElement('s'); $('hPucks').appendChild(s); puckEls.push(s); }
 function render() {
   // district colour, cross-faded over the last 10% of each district
-  const d = dIndex(S.dist), f = ((S.dist % DLEN) + DLEN) % DLEN / DLEN, t = clamp((f - 0.9) / 0.1, 0, 1), a = DISTRICTS[d].sky, b = DISTRICTS[(d + 1) % 6].sky;
+  const d = dIndex(S.dist), f = ((S.dist % DLEN) + DLEN) % DLEN / DLEN, t = clamp((f - 0.9) / 0.1, 0, 1), a = DISTRICTS[d].sky, b = DISTRICTS[(d + 1) % NDIST].sky;
   fogCol.setRGB(lerp(a[0], b[0], t) / 255, lerp(a[1], b[1], t) / 255, lerp(a[2], b[2], t) / 255).convertSRGBToLinear();
   scene.fog.color.copy(fogCol); skyMat.uniforms.uHorizon.value.copy(fogCol); skyMat.uniforms.uTime.value = S.t; renderer.setClearColor(fogCol);
   if (!REDUCED && S.mode !== 'paused') { // distant lightning, one soft pulse
@@ -1448,6 +1482,7 @@ function render() {
     const e = S.t - storm.t, f = e < 0.6 ? Math.sin(e / 0.6 * Math.PI) * Math.exp(-e * 4) : 0;
     hemi.intensity = 0.16 + f * 1.5; skyMat.uniforms.uFlash.value = f; }
   sigMat.color.copy(Math.sin(S.t * 5) > 0 ? SIG_ON : SIG_OFF); { const k = Math.sin(S.t * 11) > 0; polA.color.copy(k ? POL_R : POL_OFF); polB.color.copy(k ? POL_OFF : POL_B); }
+  { const north = !!DISTRICTS[d].north; far.visible = !north; farN.visible = north; tramWire.visible = !DISTRICTS[d].noTram; }
   far.userData.beacon.visible = Math.sin(S.t * 3) > 0; updateTower(S.t, fogCol); blinkMat.color.copy(Math.sin(S.t * 8) > 0 ? BLINK_ON : BLINK_OFF);
 
   const playing = S.mode !== 'title';
@@ -1468,7 +1503,6 @@ function render() {
   if (composer) { finalPass.uniforms.uTime.value = S.t % 60; finalPass.uniforms.uDanger.value = S.mode !== 'title' && S.gap < 40 ? (1 - S.gap / 40) * (0.7 + 0.3 * Math.sin(S.t * 8)) : 0; composer.render(); }
   else renderer.render(scene, camera);
 
-  placeCoyoteMarks();
   if (!playing) return;
   const dd = DISTRICTS[d];
   setText('hDist', Math.floor(S.dist).toLocaleString() + ' m');
