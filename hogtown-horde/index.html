@@ -97,6 +97,25 @@ button:focus-visible{outline:3px solid var(--sodium);outline-offset:2px}
 .stats span{font-size:13px;letter-spacing:.14em;color:var(--fog);text-transform:uppercase;font-weight:600}
 .stats b{font-size:34px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.1}
 .stats b.hot{color:var(--sodium)}
+.namerow{display:flex;flex-direction:column;gap:6px;width:min(100%,320px)}
+.namerow label{font:600 13px var(--display);letter-spacing:.14em;text-transform:uppercase;color:var(--fog)}
+.namerow input{font:600 20px var(--body);color:var(--bone);background:var(--asphalt);border:2px solid #3a4a6a;padding:9px 12px;border-radius:2px}
+.namerow input:focus{outline:none;border-color:var(--sodium)}
+.namerow input.need{border-color:var(--ttc)}
+.board{width:100%;max-width:420px}
+.board h2{margin:6px 0 8px;font:800 18px var(--display);letter-spacing:.12em;text-transform:uppercase;color:var(--sodium)}
+.board ol{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px;font-variant-numeric:tabular-nums}
+.board li{display:grid;grid-template-columns:2.2em minmax(0,1fr) auto;gap:10px;align-items:baseline;padding:5px 8px;background:#161d29b3;border-left:3px solid transparent}
+.board li.me{border-left-color:var(--sodium);background:#2a2416cc}
+.board li .n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.board li .n small{color:var(--fog);margin-left:6px;font-size:12px}
+.board li .r{color:var(--fog);font:600 14px var(--display)}
+.board li .s{font:800 17px var(--display)}
+.board .lbnote{margin:6px 0 0;font-size:12px;color:var(--fog)}
+.board .empty{color:var(--fog);font-size:14px;padding:4px 0}
+.rank{margin:0;font:800 20px var(--display);letter-spacing:.06em;color:var(--sodium);text-transform:uppercase}
+.againrow{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.ghost{font:600 15px var(--display);letter-spacing:.08em;text-transform:uppercase;background:none;color:var(--bone);border:1px solid #3a4a6a;padding:10px 16px;cursor:pointer}
 </style>
 </head>
 <body>
@@ -138,7 +157,9 @@ button:focus-visible{outline:3px solid var(--sodium);outline-offset:2px}
         <dt>Watch for</dt><dd>Coyotes (jump or shoot), cyclists crossing (switch lanes), and a few famous zombies a puck only stuns.</dd>
         <dt>Pick up</dt><dd>Pucks for ammo, a Tim Hortons coffee to pull away, tokens for points.</dd>
       </dl>
+      <div class="namerow"><label for="pname">Runner name</label><input id="pname" type="text" maxlength="16" autocomplete="nickname" spellcheck="false" placeholder="Your name"></div>
       <button class="cta" id="start" type="button">Start running</button>
+      <div class="board"><h2>Leaderboard</h2><ol id="lbTitle"></ol><p class="lbnote" id="lbNoteT"></p></div>
       <p style="font-size:12px;color:var(--fog)">Building photos via Wikimedia Commons by Arild Vågen, Qviri, Dillan Payne (CC BY-SA 4.0), Jim Henderson (CC BY 4.0), LingLass and Raysonho (CC0).</p>
     </div>
   </div>
@@ -153,7 +174,9 @@ button:focus-visible{outline:3px solid var(--sodium);outline-offset:2px}
         <div><span>Zombies dropped</span><b id="oKills">0</b></div>
         <div><span>Best</span><b id="oBest" class="hot">0</b></div>
       </div>
-      <button class="cta" id="again" type="button">Run again</button>
+      <p class="rank" id="oRank"></p>
+      <div class="againrow"><button class="cta" id="again" type="button">Run again</button><button class="ghost" id="rename" type="button">Change name</button></div>
+      <div class="board"><h2>Leaderboard</h2><ol id="lbOver"></ol><p class="lbnote" id="lbNoteO"></p></div>
     </div>
   </div>
 </div>
@@ -1365,6 +1388,7 @@ function buildCar(g, o) {
     sph(g, 0.17, 0.075, 0.06, emit(0xd01818, 1.4), sd * (w - 0.3), st[st.length - 2][2] - 0.04, zr + 0.08); sph(g, 0.06, 0.05, 0.05, blinkMat, sd * (w - 0.1), st[st.length - 2][2] - 0.06, zr + 0.13);
     rod(g, 0.01, [sd * 0.1, st[3][3] + 0.02, st[3][0] - 0.1], [sd * 0.55, st[3][3] + 0.16, st[3][0] - 0.45], dk);                                 // wiper
   }
+  if (o.drive) { const beam = new T.Mesh(PLANE, mats.carBeam || (mats.carBeam = new T.MeshBasicMaterial({map:glowTex, color:C(0xfff0d8, 0.9), blending:T.AdditiveBlending, transparent:true, opacity:0.4, depthWrite:false}))); beam.rotation.x = -Math.PI / 2; beam.scale.set(2.6, 7, 1); beam.position.set(0, 0.03, zf + 4); g.add(beam); }
   rbox(g, w * 2 - 0.06, 0.26, 0.2, 0.1, paint, 0, b + 0.13, zf - 0.02); rbox(g, w * 1.3, 0.13, 0.06, 0.04, dk, 0, b + 0.13, zf + 0.085); rbox(g, w * 1.05, 0.12, 0.06, 0.04, dk, 0, st[0][2] - 0.07, zf + 0.01);
   rbox(g, w * 2 - 0.06, 0.26, 0.2, 0.1, paint, 0, b + 0.15, zr + 0.02); for (const dx of [-0.5, 0.5]) cyl(g, 0.035, 0.1, steel, dx, b + 0.08, zr - 0.06).rotation.x = Math.PI / 2;
   const pf = new T.Mesh(PLANE, plates[Math.floor(hh(o.col + (o.skew || 0) * 99) * 4)]); pf.scale.set(0.5, 0.19, 1); pf.position.set(0, b + 0.15, zf + 0.122); g.add(pf);
@@ -1419,20 +1443,22 @@ const LOWS = ['cone', 'bin', 'barrier', 'pit'];
 const SOLID = {car:1, tram:1, zombie:1, cyclist:1, barrier:2, bin:2, cone:2, pit:2}; // 2 = low enough for a coyote to leap
 function laneBlocked(l, e, ahead, leapLow) { const x = LANES[l];
   return ents.some(o => o !== e && !o.gone && !(o.dead > 0) && !o.flee && SOLID[o.type] && !(leapLow && SOLID[o.type] === 2) && Math.abs(o.x - x) < o.hw + 0.45 && o.z - e.z > -1.4 - o.len / 2 && o.z - e.z < ahead + o.len / 2); }
-function roam(e, dt, coyote) { // pick a lane that is clear ahead; switch lanes more often the further the run has gone; returns true if it must wait
-  const k = clamp((S.dist - 600) / 2400, 0, 1), ahead = coyote ? 5 : 3, x0 = e.x;
+function roam(e, dt, kind) { // kind: true = coyote, false = zombie, 'car'. Returns true when it has to wait.
+  const coyote = kind === true, car = kind === 'car', k = clamp((S.dist - 600) / 2400, 0, 1), ahead = car ? 8 : coyote ? 5 : 3, x0 = e.x;
   if (e.lane === undefined) e.lane = clamp(Math.round(e.x / 2.4) + 1, 0, 2);
-  e.wt = (e.wt === undefined ? rnd(0.8, 2.4) : e.wt) - dt;
-  const blocked = laneBlocked(e.lane, e, ahead, coyote), committed = e.z > -7; // close to the runner it holds its line, so a dodge stays fair
-  if (blocked || (!committed && k > 0 && e.wt <= 0)) { // always avoid what is in the way; only the random weaving stops near the runner
-    const opts = [e.lane - 1, e.lane + 1].filter(l => l >= 0 && l <= 2 && !laneBlocked(l, e, ahead + 2, coyote)); if (opts.length) e.lane = pick(opts);
-    e.wt = (coyote ? rnd(1.3, 2.6) : rnd(2.2, 4.4)) / (0.4 + k); }
-  const sp = (coyote ? 3.5 + 4 * k : 1.2 + 2.2 * k) * dt, tx = LANES[e.lane] + (coyote ? Math.sin(S.t * 2.2 + e.ph) * 0.12 : 0);
+  e.wt = (e.wt === undefined ? rnd(0.5, 1.6) : e.wt) - dt;
+  const blocked = laneBlocked(e.lane, e, ahead, coyote), committed = e.z > -7; // in the last few metres it holds its line, so a dodge stays possible
+  if (blocked || (!committed && k > 0 && e.wt <= 0)) {
+    const free = [e.lane - 1, e.lane + 1].filter(l => l >= 0 && l <= 2 && !laneBlocked(l, e, ahead + 2, coyote));
+    if (blocked) { if (free.length) e.lane = free.sort((a, b) => Math.abs(a - P.lane) - Math.abs(b - P.lane))[0]; } // round the obstacle, on the runner's side
+    else if (e.lane !== P.lane) { const step = e.lane + Math.sign(P.lane - e.lane); if (free.includes(step)) e.lane = step; } // close in on the runner's lane
+    e.wt = (coyote ? rnd(0.9, 1.8) : car ? rnd(2.2, 4) : rnd(1.5, 3)) / (0.4 + k); }
+  const sp = (coyote ? 3.5 + 4 * k : car ? 2 + 2.5 * k : 1.2 + 2.2 * k) * dt, tx = LANES[e.lane] + (coyote ? Math.sin(S.t * 2.2 + e.ph) * 0.12 : 0);
   e.x += clamp(tx - e.x, -sp, sp); e.mesh.position.x = e.x; e.lv = (e.x - x0) / Math.max(dt, 1e-3);
   if (coyote && !e.hop && ents.some(o => SOLID[o.type] === 2 && !o.gone && Math.abs(o.x - e.x) < o.hw + 0.4 && o.z - e.z > 0.4 && o.z - e.z < 1.6 + o.len / 2)) e.hop = 0.5;
-  return Math.abs(e.x - LANES[e.lane]) < 0.3 && laneBlocked(e.lane, e, 1.6, coyote);
+  return Math.abs(e.x - LANES[e.lane]) < 0.3 && laneBlocked(e.lane, e, car ? 3 : 1.6, coyote);
 }
-function zombie(lane, z, fast) { const d = dIndex(S.dist - z); add('zombie', lane, z, {fast, vs: fast ? rnd(5, 7) : rnd(1, 2.2), top: d === 1 ? 0x3b4252 : pick(ZTOP), tie: d === 1}); }
+function zombie(lane, z, fast) { const d = dIndex(S.dist - z); add('zombie', lane, z, {fast, vs: (fast ? rnd(5, 7) : rnd(1, 2.2)) * (1 + 1.3 * clamp((S.dist - 600) / 2400, 0, 1)), top: d === 1 ? 0x3b4252 : pick(ZTOP), tie: d === 1}); }
 function spawnRow() {
   const d = Math.min(1, S.dist / 1500), z = SPAWN_Z, easy = S.dist < 160, here = DISTRICTS[dIndex(S.dist - z)], label = here.car;
   const opts = easy ? [['single', 3], ['zomb', 2], ['scaf', 1.5], ['low3', 1]] :
@@ -1441,7 +1467,8 @@ function spawnRow() {
   let r = Math.random() * tot, p = opts[0][0]; for (const o of opts) { if ((r -= o[1]) <= 0) { p = o[0]; break; } }
   if (here.noTram && (p === 'tram' || p === 'combo')) p = 'cars';
   const order = [0, 1, 2].sort(() => Math.random() - 0.5), [a, b, c] = order, tok = Math.random() < 0.6;
-  const car = (l, zz) => { const k = Math.random(), kind = k < 0.16 ? 'taxi' : k < 0.28 ? 'police' : k < 0.5 ? 'suv' : 'sedan'; const e = add('car', l, zz, {kind, col: kind === 'taxi' ? 0xe8761c : kind === 'police' ? 0xe8e8e4 : pick([0x3f6f9a, 0x8a8f9a, 0x7a2f2f, 0x1c1e24, 0xc8ccd2, 0x2f4a3a]), skew: rnd(-0.12, 0.12)}); if (kind === 'suv') e.y1 = 1.4; return e; };
+  const car = (l, zz) => { const k = Math.random(), kind = k < 0.16 ? 'taxi' : k < 0.28 ? 'police' : k < 0.5 ? 'suv' : 'sedan'; const e = add('car', l, zz, {kind, col: kind === 'taxi' ? 0xe8761c : kind === 'police' ? 0xe8e8e4 : pick([0x3f6f9a, 0x8a8f9a, 0x7a2f2f, 0x1c1e24, 0xc8ccd2, 0x2f4a3a]), skew: rnd(-0.12, 0.12), ...driveOpts()}); if (kind === 'suv') e.y1 = 1.4; return e; };
+  function driveOpts() { const k2 = clamp((S.dist - 900) / 2400, 0, 1); return Math.random() < k2 * 0.75 ? {drive:true, vs:rnd(4, 7 + 6 * k2), skew:0, hint:'Oncoming car! Dodge'} : {}; }
   let len = 2;
   switch (p) {
     case 'single': if (!easy && Math.random() < 0.3) { car(a, z); len = 5; } else { add(pick(LOWS), easy ? P.lane : a, z); if (tok) tokens(easy ? P.lane : a, z + 3.2, 5, true); } break;
@@ -1486,6 +1513,54 @@ function hurt(dmg, bite) {
   tone(bite ? 110 : 160, 0.28, 'sawtooth', 0.09, 50); puff(P.x, P.y + 1, 0, bite ? 0xb3221a : 0xc9b458, 10, 3);
   if (S.gap <= 0) { S.gap = 0; S.mode = 'dying'; S.dying = 0; tone(90, 0.9, 'sawtooth', 0.1, 35); }
 }
+/* ---------- player name and leaderboard: shared through the artifact's database where the viewer may write, otherwise kept on this device ---------- */
+const LB = {db:null, uid:null, docs:[], mine:null, local:[], live:false, note:'', writing:Promise.resolve(), last:null};
+const cleanName = v => String(v == null ? '' : v).replace(/[\u0000-\u001f\u007f]/g, '').replace(/\s+/g, ' ').trim().slice(0, 16);
+const cleanWhere = v => String(v == null ? '' : v).replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 28);
+const okRun = r => r && typeof r === 'object' && Number.isFinite(+r.score) && +r.score >= 0;
+try { LB.local = (JSON.parse(localStorage.getItem('hogtown-runs') || '[]') || []).filter(okRun).slice(0, 20); } catch (e) { LB.local = []; }
+try { $('pname').value = cleanName(localStorage.getItem('hogtown-name') || ''); } catch (e) {}
+function boardEntries() {
+  if (LB.live) { const out = []; for (const d of LB.docs) for (const r of (Array.isArray(d.runs) ? d.runs.slice(0, 5) : [])) if (okRun(r)) out.push({name:cleanName(r.name) || 'Runner', score:Math.floor(+r.score), where:cleanWhere(r.where), at:+r.at || 0, uid:d.id}); return out.sort((a, b) => b.score - a.score); }
+  return LB.local.map(r => ({name:cleanName(r.name) || 'Runner', score:Math.floor(+r.score), where:cleanWhere(r.where), at:+r.at || 0, uid:'local'})).sort((a, b) => b.score - a.score);
+}
+function renderBoards() {
+  const rows = boardEntries(), top = rows.slice(0, 10), mark = LB.last;
+  for (const [olId, noteId] of [['lbTitle', 'lbNoteT'], ['lbOver', 'lbNoteO']]) {
+    const ol = $(olId); ol.textContent = '';
+    if (!top.length) { const li = document.createElement('li'); li.className = 'empty'; li.textContent = 'No runs yet. Set the first score.'; ol.appendChild(li); }
+    top.forEach((r, i) => { const li = document.createElement('li'); if (mark && r.at === mark.at && r.score === mark.score) li.className = 'me';
+      const rk = document.createElement('span'); rk.className = 'r'; rk.textContent = '#' + (i + 1);
+      const nm = document.createElement('span'); nm.className = 'n'; nm.textContent = r.name; if (r.where) { const w = document.createElement('small'); w.textContent = r.where; nm.appendChild(w); }
+      const sc = document.createElement('span'); sc.className = 's'; sc.textContent = r.score.toLocaleString(); li.append(rk, nm, sc); ol.appendChild(li); });
+    $(noteId).textContent = LB.note || (LB.live ? 'Shared with everyone who plays this page.' : 'Best runs on this device.');
+  }
+}
+renderBoards();
+(async () => {
+  const c = window.claude; if (!c || typeof c.use !== 'function') return;
+  const [db, user] = await Promise.all([c.use('db'), c.use('user')]); if (!db) return;
+  LB.db = db; try { LB.uid = user ? await user.id() : null; } catch (e) { LB.uid = null; }
+  try { if (user && (await user.can('data.write')) === false) LB.note = 'You can see the shared board, but your runs are kept on this device.'; } catch (e) {}
+  const timer = setTimeout(() => { if (!LB.live) { LB.note = 'The shared leaderboard can\'t be reached yet; showing runs on this device.'; renderBoards(); } }, 10000);
+  db.collection('scores').limit(500).onSnapshot(snap => {
+    if (!snap.metadata.fromCache) { clearTimeout(timer); if (LB.note.startsWith('The shared')) LB.note = ''; }
+    LB.live = true; LB.docs = snap.docs.map(d => Object.assign({id:d.id}, d.data())); LB.mine = LB.docs.find(d => d.id === LB.uid) || null; renderBoards();
+  }, () => { clearTimeout(timer); LB.live = false; LB.note = 'The shared leaderboard is unavailable; showing runs on this device.'; renderBoards(); });
+})();
+function recordRun(run) {
+  LB.last = run; LB.local = LB.local.concat([run]).sort((a, b) => b.score - a.score).slice(0, 20);
+  try { localStorage.setItem('hogtown-runs', JSON.stringify(LB.local)); } catch (e) {}
+  if (LB.db && LB.uid && !LB.note.startsWith('You can see')) {
+    const prev = LB.mine && Array.isArray(LB.mine.runs) ? LB.mine.runs.filter(okRun) : [], runs = prev.concat([run]).sort((a, b) => b.score - a.score).slice(0, 5);
+    LB.writing = LB.writing.then(() => LB.db.doc('scores/' + LB.uid).set({runs, best:runs[0].score, updatedAt:Date.now()})).catch(e => {
+      if (e && e.code === 'invalid_argument') LB.note = 'You can see the shared board, but your runs are kept on this device.'; else if (e && e.code === 'quota_exceeded') LB.note = 'The shared board is full; this run was kept on this device.'; else LB.note = 'This run could not be shared; it was kept on this device.';
+      renderBoards(); });
+  }
+  renderBoards();
+  const rows = boardEntries(), pos = rows.findIndex(r => r.at === run.at && r.score === run.score);
+  $('oRank').textContent = pos >= 0 ? (pos === 0 ? 'New top score!' : 'You placed #' + (pos + 1) + (LB.live ? ' on the leaderboard' : ' on this device')) : '';
+}
 function endGame() {
   S.mode = 'over'; const sc = score(), d = DISTRICTS[dIndex(S.dist)];
   if (sc > S.best) { S.best = sc; try { localStorage.setItem('hogtown-best', String(sc)); } catch (e) {} }
@@ -1493,6 +1568,7 @@ function endGame() {
   $('overLine').textContent = 'The horde caught up with you on ' + d.street + ', ' + Math.floor(S.dist).toLocaleString() + ' metres from Union Station.';
   $('oDist').textContent = Math.floor(S.dist).toLocaleString() + ' m'; $('oScore').textContent = sc.toLocaleString();
   $('oKills').textContent = S.kills; $('oBest').textContent = S.best.toLocaleString();
+  recordRun({name:PLAYER.name, score:sc, dist:Math.floor(S.dist), kills:S.kills, where:d.name, at:Date.now()});
   $('hHint').hidden = true; $('over').hidden = false; $('again').focus();
 }
 function move(dir) { if (S.mode !== 'play') return; const l = clamp(P.lane + dir, 0, 2); if (l !== P.lane) { P.lane = l; tone(300, 0.06, 'triangle', 0.03, 380); } }
@@ -1579,18 +1655,25 @@ function update(dt) {
     if (e.type === 'zombie') {
       if (e.dead > 0) { e.dead += dt; e.z += dz; e.mesh.position.z = e.z; e.mesh.rotation.x = Math.min(1.5, e.dead * 7); e.mesh.position.y = -e.dead * 0.2; continue; }
       if (e.who && !e.said && e.z > -62) { e.said = true; S.toast = 'Zombie ' + WHO[e.who].name + ' ahead!'; S.toastT = S.t; }
-      if (e.stun > 0) e.stun -= dt; else { const wait = e.fast ? false : roam(e, dt, false); if (!wait) e.z += e.vs * dt; if (!e.fast) e.mesh.rotation.y = clamp((e.lv || 0) * 0.25, -0.7, 0.7); } if (e.fast && e.z < -6) { const sx = 2.6 * dt; e.x += clamp(P.x - e.x, -sx, sx); e.mesh.position.x = e.x; }
-      pose(e.mesh.userData.z, e.stun > 0 ? e.ph : S.t * (e.fast ? 14 : 6) + e.ph); if (e.who) e.mesh.userData.z.rotation.x = e.stun > 0 ? 0.35 : 0;
+      if (e.stun > 0) e.stun -= dt; else { const wait = e.fast ? false : roam(e, dt, false); if (!wait) e.z += e.vs * dt; if (!e.fast) e.mesh.rotation.y = clamp(Math.atan2(e.lv || 0, Math.max(e.vs, 0.5)), -0.9, 0.9); } if (e.fast && e.z < -6) { const sx = 2.6 * dt; e.x += clamp(P.x - e.x, -sx, sx); e.mesh.position.x = e.x; }
+      pose(e.mesh.userData.z, e.stun > 0 ? e.ph : S.t * (e.fast ? 14 : 3.8 * clamp(e.vs, 1.2, 4)) + e.ph); if (e.who) e.mesh.userData.z.rotation.x = e.stun > 0 ? 0.35 : 0;
     } else if (e.type === 'coyote') {
       if (!e.howled && e.z > -78) { e.howled = true; tone(500, 0.5, 'sine', 0.05, 900); setTimeout(() => tone(880, 0.7, 'sine', 0.04, 560), 380); if (S.t - (S.toastT || -9) > 2) { S.toast = 'Coyotes on the street!'; S.toastT = S.t; } }
-      if (e.flee) { e.x += e.flee * 9 * dt; e.z -= 4 * dt; e.mesh.position.x = e.x; e.mesh.rotation.y = Math.PI - e.flee * 1.1; if (Math.abs(e.x) > 9) e.gone = true; }
-      else { const wait = roam(e, dt, true); if (!wait) e.z += e.vs * dt; e.mesh.rotation.y = Math.PI + clamp((e.lv || 0) * 0.12, -0.6, 0.6);
+      if (e.flee) { e.x += e.flee * 9 * dt; e.mesh.position.x = e.x; e.mesh.position.y = 0; e.mesh.rotation.y = Math.PI + Math.atan2(e.flee * 9, 0.6); if (Math.abs(e.x) > 9) e.gone = true; }
+      else { const wait = roam(e, dt, true); if (!wait) e.z += e.vs * dt; e.mesh.rotation.y = Math.PI + clamp(Math.atan2(e.lv || 0, Math.max(e.vs, 1)), -0.9, 0.9);
         if (e.hop) { e.hop = Math.max(0, e.hop - dt); e.mesh.position.y = Math.sin(Math.PI * (1 - e.hop / 0.5)) * 1.1; if (!e.hop) e.mesh.position.y = 0; } }
       const u = e.mesh.userData, ph = S.t * 17 + e.ph; u.legs[0].rotation.x = Math.sin(ph) * 0.95; u.legs[1].rotation.x = Math.sin(ph + 0.5) * 0.95; u.legs[2].rotation.x = Math.sin(ph + 2.6) * 0.95; u.legs[3].rotation.x = Math.sin(ph + 3.1) * 0.95; u.body.position.y = Math.abs(Math.sin(ph)) * 0.07; u.body.rotation.x = Math.sin(ph) * 0.06;
     } else if (e.type === 'cyclist') {
       if (!e.go && e.z > -34) { e.go = true; const tHit = Math.max(0.6, -e.z / v); e.vx = clamp(Math.abs(LANES[P.lane] - e.x) / tHit, 3.2, 10) * e.dir; tone(1700, 0.07, 'triangle', 0.05); setTimeout(() => tone(1700, 0.09, 'triangle', 0.05), 130); }
-      if (e.go && Math.abs(e.x) < 9.5) { e.x += e.vx * dt; e.mesh.position.x = e.x; }
-      pose(e.mesh.userData.rider, e.go ? S.t * 9 + e.ph : e.ph, {ride:true});
+      if (e.go && e.stopX === undefined) { const kc = clamp((S.dist - 600) / 2400, 0, 1); e.stopX = S.dist > 600 && Math.random() < 0.2 + 0.6 * kc ? LANES[Math.random() < 0.6 ? P.lane : Math.floor(Math.random() * 3)] : null; }
+      if (e.go && Math.abs(e.x) < 9.5) {
+        if (e.stopT > 0) { e.stopT -= dt; if (e.stopT <= 0 && Math.random() < 0.35) { e.vx = -e.vx; e.dir = -e.dir; e.mesh.rotation.y += Math.PI; } }
+        else { const nx = e.x + e.vx * dt; if (e.stopX !== null && !e.stopped && (e.stopX - e.x) * (e.stopX - nx) <= 0) { e.stopped = true; e.stopT = rnd(0.9, 2.2); e.x = e.stopX; tone(1500, 0.08, 'triangle', 0.05); } else e.x = nx; }
+        e.mesh.position.x = e.x; }
+      pose(e.mesh.userData.rider, e.go && !(e.stopT > 0) ? S.t * 9 + e.ph : e.ph, {ride:true});
+    } else if (e.type === 'car' && e.drive) {
+      if (!e.honk && e.z > -48) { e.honk = true; tone(330, 0.16, 'square', 0.05); setTimeout(() => tone(392, 0.24, 'square', 0.05), 190); }
+      const wait = roam(e, dt, 'car'); e.cv = lerp(e.cv === undefined ? e.vs : e.cv, wait ? 0 : e.vs, clamp(dt * 3, 0, 1)); e.z += e.cv * dt; e.mesh.rotation.y = clamp(Math.atan2(e.lv || 0, Math.max(e.cv, 1)), -0.5, 0.5);
     } else if (e.type === 'token') e.mesh.rotation.y += dt * 4;
     else if (e.type === 'puck' || e.type === 'coffee') { e.mesh.position.y = e.y + Math.sin(S.t * 4 + e.ph) * 0.12; e.mesh.rotation.y += dt * 2; }
     e.z += dz; e.mesh.position.z = e.z;
@@ -1681,13 +1764,19 @@ function frame(ts) {
   if (S.mode === 'play' && raw < 0.5) { q.t += raw; q.n++; if (q.n >= 90) { if (q.t / q.n > 1 / 30 && q.level < 3) { q.level++; if (q.level === 1) { moonLight.castShadow = false; lamps[0].castShadow = false; pxCap = 1; resize(); } else if (q.level === 2 && bloom) bloom.enabled = false; else lampsOn = false; } q.t = 0; q.n = 0; } }
   update(dt); render(); requestAnimationFrame(frame);
 }
-function begin() { initAudio(); reset(); hudCache.hint = null; $('hHint').hidden = true; }
+const PLAYER = {name:''};
+function begin() {
+  if (!$('title').hidden) { const n = cleanName($('pname').value); if (!n) { $('pname').classList.add('need'); $('pname').placeholder = 'Enter a name to start'; $('pname').focus(); return; }
+    PLAYER.name = n; $('pname').classList.remove('need'); try { localStorage.setItem('hogtown-name', n); } catch (e) {} }
+  else if (!PLAYER.name) PLAYER.name = cleanName($('pname').value) || 'Runner';
+  initAudio(); reset(); hudCache.hint = null; $('hHint').hidden = true;
+}
 
 addEventListener('keydown', e => {
   const k = e.code;
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(k) && S.mode !== 'title' && S.mode !== 'over') e.preventDefault();
   if (e.repeat) return;
-  if (S.mode === 'title' || S.mode === 'over') { if (k === 'Enter' || (k === 'Space' && document.activeElement.tagName !== 'BUTTON')) { e.preventDefault(); begin(); } return; }
+  if (S.mode === 'title' || S.mode === 'over') { const tag = document.activeElement && document.activeElement.tagName; if (k === 'Enter' || (k === 'Space' && tag !== 'BUTTON' && tag !== 'INPUT')) { e.preventDefault(); begin(); } return; }
   if (k === 'Space' || k === 'ArrowUp' || k === 'KeyW') jump(true);
   else if (k === 'ArrowDown' || k === 'KeyS') slide(true);
   else if (k === 'ArrowLeft' || k === 'KeyA') move(-1);
@@ -1721,6 +1810,7 @@ hold($('bSlide'), () => slide(true), () => slide(false));
 hold($('bShoot'), shoot); hold($('bLeft'), () => move(-1)); hold($('bRight'), () => move(1));
 $('start').addEventListener('click', begin);
 $('again').addEventListener('click', begin);
+$('rename').addEventListener('click', () => { $('over').hidden = true; $('title').hidden = false; S.mode = 'title'; $('hud').hidden = true; $('pname').focus(); $('pname').select(); });
 $('pause').addEventListener('click', e => { togglePause(); e.currentTarget.blur(); });
 $('mute').addEventListener('click', e => { S.muted = !S.muted; e.currentTarget.textContent = S.muted ? 'Sound off' : 'Sound on'; e.currentTarget.blur(); });
 document.addEventListener('visibilitychange', () => { if (document.hidden && S.mode === 'play') togglePause(); });
