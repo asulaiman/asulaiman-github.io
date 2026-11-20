@@ -175,20 +175,21 @@ const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const LANES = [-2.4, 0, 2.4], DLEN = 500, SPAWN_Z = -135, SLOT = 14;
 
 const DISTRICTS = [
-  {name:'Union Station', street:'Front St W', streets:['Front St W','Bay St','York St'], car:'509 HARBOURFRONT', sky:[104,84,50]},
+  {name:'Union Station', street:'Front St W', streets:['Front St W','Bay St','York St'], car:'', noTram:true, sky:[104,84,50]}, // 509/510 run in a tunnel under Bay to the Union loop, not on Front
   {name:'Financial District', street:'King St W', streets:['King St W','Bay St','Adelaide St W'], car:'504 KING', sky:[88,80,58]},
   {name:'Nathan Phillips Sq', street:'Queen St W', streets:['Queen St W','Bay St','Albert St'], car:'501 QUEEN', sky:[104,82,50]},
-  {name:'Yonge & Dundas', street:'Yonge St', streets:['Yonge St','Dundas St E','Shuter St'], car:'505 DUNDAS', sky:[110,80,60]},
+  {name:'Yonge & Dundas', street:'Dundas St W', streets:['Dundas St W','Yonge St','Victoria St'], car:'505 DUNDAS', sky:[110,80,60]}, // no streetcars on Yonge since 1954; the 505 runs on Dundas
   {name:'Chinatown', street:'Spadina Ave', streets:['Spadina Ave','Dundas St W','Huron St'], car:'510 SPADINA', sky:[116,78,44]},
-  {name:'Kensington Market', street:'Augusta Ave', streets:['Augusta Ave','Baldwin St','Nassau St'], car:'506 CARLTON', sky:[96,84,52]},
+  {name:'Kensington Market', street:'Augusta Ave', streets:['Augusta Ave','Baldwin St','Nassau St'], car:'', noTram:true, sky:[96,84,52]}, // the 506 runs on College, not Augusta
   {name:'Yorkville', street:'Yorkville Ave', streets:['Yorkville Ave','Bellair St','Bloor St W'], car:'', noTram:true, north:true, sky:[94,84,66]},
   {name:'Rosedale', street:'Crescent Rd', streets:['Crescent Rd','Glen Rd','South Dr'], car:'', noTram:true, north:true, sky:[70,82,64]},
   {name:'Midtown', street:'St Clair Ave W', streets:['St Clair Ave W','Yonge St','Heath St W'], car:'512 ST CLAIR', north:true, sky:[96,86,62]},
-  {name:'Uptown', street:'Yonge St', streets:['Yonge St','Eglinton Ave W','Roehampton Ave'], car:'5 EGLINTON', north:true, sky:[104,80,64]},
+  {name:'Uptown', street:'Yonge St', streets:['Yonge St','Eglinton Ave W','Roehampton Ave'], car:'', noTram:true, north:true, sky:[104,80,64]}, // Line 5 Eglinton is underground at Yonge
   {name:'North York Centre', street:'Yonge St', streets:['Yonge St','Sheppard Ave W','Park Home Ave'], car:'', noTram:true, north:true, sky:[96,82,70]},
   {name:'Thornhill', street:'Yonge St', streets:['Yonge St','Centre St','Steeles Ave W'], car:'', noTram:true, north:true, sky:[86,84,66]},
 ];
 const NDIST = DISTRICTS.length;
+const NO_TRAM_MASK = DISTRICTS.reduce((m, d, i) => m + (d.noTram ? Math.pow(2, i) : 0), 0);
 const dIndex = m => ((Math.floor(m / DLEN) % NDIST) + NDIST) % NDIST, LOOP = NDIST * DLEN;
 const hh = n => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -566,6 +567,16 @@ const roadNormal = normalFrom(512, 512, (g) => {
 for (const t of [wetTex, roadNormal]) t.wrapT = T.RepeatWrapping;
 const road = new T.Mesh(new T.PlaneGeometry(16, 416), new T.MeshStandardMaterial({map:roadTex, roughnessMap:wetTex, metalnessMap:wetTex, normalMap:roadNormal, color:new T.Color(0.62, 0.64, 0.7), normalScale:new T.Vector2(0.9, 0.9), roughness:1, metalness:1, envMapIntensity:1.2}));
 road.receiveShadow = true;
+const roadU = {uRoadDist:{value:0}, uNoTram:{value:NO_TRAM_MASK}};
+road.material.onBeforeCompile = sh => {
+  Object.assign(sh.uniforms, roadU);
+  sh.vertexShader = 'varying float vRoadZ;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n vRoadZ = (modelMatrix * vec4(transformed, 1.0)).z;');
+  const R = c => T.ShaderChunk[c].replace(/vUv/g, 'vUvR');
+  sh.fragmentShader = 'varying float vRoadZ; uniform float uRoadDist; uniform float uNoTram;\n' + sh.fragmentShader
+    .replace('#include <map_fragment>', `vec2 vUvR = vUv; { float di = mod(floor((uRoadDist - vRoadZ) / ${DLEN}.0), ${NDIST}.0); float nt = mod(floor(uNoTram / pow(2.0, di) + 0.001), 2.0);
+      if (nt > 0.5 && abs(fract(vUv.x) - 0.5) < 0.0718) vUvR.x += 0.1525; }\n` + R('map_fragment'))
+    .replace('#include <roughnessmap_fragment>', R('roughnessmap_fragment')).replace('#include <metalnessmap_fragment>', R('metalnessmap_fragment')).replace('#include <normal_fragment_maps>', R('normal_fragment_maps'));
+};
 function inPuddle(x, z) { // is this spot on the road inside one of the painted puddles, given how far the road has scrolled?
   const px = (x + 8) * 32, v = (20 - z) / 16 + roadTex.offset.y, py = (1 - (v - Math.floor(v))) * 512;
   for (const q of PUDDLES) { let dx = px - q[0], dy = py - q[1]; if (dy > 256) dy -= 512; if (dy < -256) dy += 512;
@@ -1405,6 +1416,22 @@ function add(type, lane, z, o) {
 function drop(e) { scene.remove(e.mesh); }
 function tokens(lane, z, n, arc) { for (let k = 0; k < n; k++) { const u = n > 1 ? k / (n - 1) : 0; add('token', lane, z - k * 1.6, {y: arc ? 0.9 + Math.sin(u * Math.PI) * 1.2 : 0.75}); } }
 const LOWS = ['cone', 'bin', 'barrier', 'pit'];
+const SOLID = {car:1, tram:1, zombie:1, cyclist:1, barrier:2, bin:2, cone:2, pit:2}; // 2 = low enough for a coyote to leap
+function laneBlocked(l, e, ahead, leapLow) { const x = LANES[l];
+  return ents.some(o => o !== e && !o.gone && !(o.dead > 0) && !o.flee && SOLID[o.type] && !(leapLow && SOLID[o.type] === 2) && Math.abs(o.x - x) < o.hw + 0.45 && o.z - e.z > -1.4 - o.len / 2 && o.z - e.z < ahead + o.len / 2); }
+function roam(e, dt, coyote) { // pick a lane that is clear ahead; switch lanes more often the further the run has gone; returns true if it must wait
+  const k = clamp((S.dist - 600) / 2400, 0, 1), ahead = coyote ? 5 : 3, x0 = e.x;
+  if (e.lane === undefined) e.lane = clamp(Math.round(e.x / 2.4) + 1, 0, 2);
+  e.wt = (e.wt === undefined ? rnd(0.8, 2.4) : e.wt) - dt;
+  const blocked = laneBlocked(e.lane, e, ahead, coyote), committed = e.z > -7; // close to the runner it holds its line, so a dodge stays fair
+  if (blocked || (!committed && k > 0 && e.wt <= 0)) { // always avoid what is in the way; only the random weaving stops near the runner
+    const opts = [e.lane - 1, e.lane + 1].filter(l => l >= 0 && l <= 2 && !laneBlocked(l, e, ahead + 2, coyote)); if (opts.length) e.lane = pick(opts);
+    e.wt = (coyote ? rnd(1.3, 2.6) : rnd(2.2, 4.4)) / (0.4 + k); }
+  const sp = (coyote ? 3.5 + 4 * k : 1.2 + 2.2 * k) * dt, tx = LANES[e.lane] + (coyote ? Math.sin(S.t * 2.2 + e.ph) * 0.12 : 0);
+  e.x += clamp(tx - e.x, -sp, sp); e.mesh.position.x = e.x; e.lv = (e.x - x0) / Math.max(dt, 1e-3);
+  if (coyote && !e.hop && ents.some(o => SOLID[o.type] === 2 && !o.gone && Math.abs(o.x - e.x) < o.hw + 0.4 && o.z - e.z > 0.4 && o.z - e.z < 1.6 + o.len / 2)) e.hop = 0.5;
+  return Math.abs(e.x - LANES[e.lane]) < 0.3 && laneBlocked(e.lane, e, 1.6, coyote);
+}
 function zombie(lane, z, fast) { const d = dIndex(S.dist - z); add('zombie', lane, z, {fast, vs: fast ? rnd(5, 7) : rnd(1, 2.2), top: d === 1 ? 0x3b4252 : pick(ZTOP), tie: d === 1}); }
 function spawnRow() {
   const d = Math.min(1, S.dist / 1500), z = SPAWN_Z, easy = S.dist < 160, here = DISTRICTS[dIndex(S.dist - z)], label = here.car;
@@ -1552,12 +1579,13 @@ function update(dt) {
     if (e.type === 'zombie') {
       if (e.dead > 0) { e.dead += dt; e.z += dz; e.mesh.position.z = e.z; e.mesh.rotation.x = Math.min(1.5, e.dead * 7); e.mesh.position.y = -e.dead * 0.2; continue; }
       if (e.who && !e.said && e.z > -62) { e.said = true; S.toast = 'Zombie ' + WHO[e.who].name + ' ahead!'; S.toastT = S.t; }
-      if (e.stun > 0) e.stun -= dt; else e.z += e.vs * dt; if (e.fast && e.z < -6) { const sx = 2.6 * dt; e.x += clamp(P.x - e.x, -sx, sx); e.mesh.position.x = e.x; }
+      if (e.stun > 0) e.stun -= dt; else { const wait = e.fast ? false : roam(e, dt, false); if (!wait) e.z += e.vs * dt; if (!e.fast) e.mesh.rotation.y = clamp((e.lv || 0) * 0.25, -0.7, 0.7); } if (e.fast && e.z < -6) { const sx = 2.6 * dt; e.x += clamp(P.x - e.x, -sx, sx); e.mesh.position.x = e.x; }
       pose(e.mesh.userData.z, e.stun > 0 ? e.ph : S.t * (e.fast ? 14 : 6) + e.ph); if (e.who) e.mesh.userData.z.rotation.x = e.stun > 0 ? 0.35 : 0;
     } else if (e.type === 'coyote') {
       if (!e.howled && e.z > -78) { e.howled = true; tone(500, 0.5, 'sine', 0.05, 900); setTimeout(() => tone(880, 0.7, 'sine', 0.04, 560), 380); if (S.t - (S.toastT || -9) > 2) { S.toast = 'Coyotes on the street!'; S.toastT = S.t; } }
       if (e.flee) { e.x += e.flee * 9 * dt; e.z -= 4 * dt; e.mesh.position.x = e.x; e.mesh.rotation.y = Math.PI - e.flee * 1.1; if (Math.abs(e.x) > 9) e.gone = true; }
-      else { e.z += e.vs * dt; e.x += Math.sin(S.t * 2.2 + e.ph) * 0.5 * dt; e.mesh.position.x = e.x; }
+      else { const wait = roam(e, dt, true); if (!wait) e.z += e.vs * dt; e.mesh.rotation.y = Math.PI + clamp((e.lv || 0) * 0.12, -0.6, 0.6);
+        if (e.hop) { e.hop = Math.max(0, e.hop - dt); e.mesh.position.y = Math.sin(Math.PI * (1 - e.hop / 0.5)) * 1.1; if (!e.hop) e.mesh.position.y = 0; } }
       const u = e.mesh.userData, ph = S.t * 17 + e.ph; u.legs[0].rotation.x = Math.sin(ph) * 0.95; u.legs[1].rotation.x = Math.sin(ph + 0.5) * 0.95; u.legs[2].rotation.x = Math.sin(ph + 2.6) * 0.95; u.legs[3].rotation.x = Math.sin(ph + 3.1) * 0.95; u.body.position.y = Math.abs(Math.sin(ph)) * 0.07; u.body.rotation.x = Math.sin(ph) * 0.06;
     } else if (e.type === 'cyclist') {
       if (!e.go && e.z > -34) { e.go = true; const tHit = Math.max(0.6, -e.z / v); e.vx = clamp(Math.abs(LANES[P.lane] - e.x) / tHit, 3.2, 10) * e.dir; tone(1700, 0.07, 'triangle', 0.05); setTimeout(() => tone(1700, 0.09, 'triangle', 0.05), 130); }
@@ -1610,7 +1638,7 @@ function render() {
     const e = S.t - storm.t, f = e < 0.6 ? Math.sin(e / 0.6 * Math.PI) * Math.exp(-e * 4) : 0;
     hemi.intensity = 0.16 + f * 1.5; skyMat.uniforms.uFlash.value = f; }
   sigMat.color.copy(Math.sin(S.t * 5) > 0 ? SIG_ON : SIG_OFF); { const k = Math.sin(S.t * 11) > 0; polA.color.copy(k ? POL_R : POL_OFF); polB.color.copy(k ? POL_OFF : POL_B); }
-  { const north = !!DISTRICTS[d].north; far.visible = !north; farN.visible = north; tramWire.visible = !DISTRICTS[d].noTram; }
+  { const north = !!DISTRICTS[d].north; far.visible = !north; farN.visible = north; tramWire.visible = !DISTRICTS[d].noTram; roadU.uRoadDist.value = S.dist; }
   far.userData.beacon.visible = Math.sin(S.t * 3) > 0; updateTower(S.t, fogCol); blinkMat.color.copy(Math.sin(S.t * 8) > 0 ? BLINK_ON : BLINK_OFF);
 
   const playing = S.mode !== 'title';
