@@ -629,6 +629,25 @@ const SURF = {
     g => { g.fillStyle = '#a0a0a0'; g.fillRect(0, 0, 256, 256); g.fillStyle = '#404040'; for (let k = 0; k < 2; k++) { g.fillRect(0, k * 128, 256, 4); g.fillRect(k * 128, 0, 4, 256); } }, 2),
 };
 const wallMat = (surf, tint, rough) => new T.MeshStandardMaterial({map:SURF[surf].map, normalMap:SURF[surf].nm, color:tint === undefined ? new T.Color(1, 1, 1) : C(tint), roughness:rough || 0.86, envMapIntensity:0.6});
+function rwall(sx, sy, sz, r, us, vs) { // box with rounded vertical corners; u runs round the walls, v up them
+  us = us || 1; vs = vs || 1; const key = 'rw' + [sx, sy, sz, r, us, vs].join(); if (geoCache[key]) return geoCache[key];
+  const hx = sx / 2, hz = sz / 2, rr = Math.min(r, hx * 0.9, hz * 0.9), N = 6, ring = [];
+  for (const [cx, cz, a0] of [[-hx + rr, -hz + rr, Math.PI], [hx - rr, -hz + rr, 1.5 * Math.PI], [hx - rr, hz - rr, 0], [-hx + rr, hz - rr, 0.5 * Math.PI]])
+    for (let i = 0; i <= N; i++) { const a = a0 + 0.5 * Math.PI * i / N; ring.push([cx + Math.cos(a) * rr, cz + Math.sin(a) * rr, Math.cos(a), Math.sin(a)]); }
+  ring.push(ring[0]);
+  const pos = [], nor = [], uv = [], wallIdx = [], capIdx = []; let per = 0;
+  ring.forEach((q, i) => { if (i) per += Math.hypot(q[0] - ring[i - 1][0], q[1] - ring[i - 1][1]); for (const y of [-sy / 2, sy / 2]) { pos.push(q[0], y, q[1]); nor.push(q[2], 0, q[3]); uv.push(per * us, (y + sy / 2) * vs); } });
+  for (let i = 0; i < ring.length - 1; i++) { const a = i * 2, b = a + 2; wallIdx.push(a, b, a + 1, a + 1, b, b + 1); }
+  const c0 = pos.length / 3; pos.push(0, sy / 2, 0); nor.push(0, 1, 0); uv.push(0, 0);
+  ring.forEach(q => { pos.push(q[0], sy / 2, q[1]); nor.push(0, 1, 0); uv.push(q[0] * us, q[1] * us); });
+  for (let i = 0; i < ring.length - 1; i++) capIdx.push(c0, c0 + 1 + i, c0 + 2 + i);
+  const P = new T.Vector3(), Q = new T.Vector3(), R = new T.Vector3(), fix = (idx, want) => { // make each part's winding face outward
+    P.fromArray(pos, idx[0] * 3); Q.fromArray(pos, idx[1] * 3); R.fromArray(pos, idx[2] * 3); const n = Q.sub(P).cross(R.sub(P)), w = new T.Vector3().fromArray(want);
+    if (n.dot(w) < 0) for (let t = 0; t < idx.length; t += 3) { const x = idx[t + 1]; idx[t + 1] = idx[t + 2]; idx[t + 2] = x; } };
+  fix(wallIdx, [nor[0], 0, nor[2]]); fix(capIdx, [0, 1, 0]);
+  const g = new T.BufferGeometry(); g.setAttribute('position', new T.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new T.Float32BufferAttribute(nor, 3)); g.setAttribute('uv', new T.Float32BufferAttribute(uv, 2)); g.setIndex(wallIdx.concat(capIdx));
+  return geoCache[key] = g;
+}
 function ubox(sx, sy, sz) { // box whose UVs are in metres, so wall textures tile at real scale
   const k = 'ub' + [sx, sy, sz].join(); if (geoCache[k]) return geoCache[k];
   const geo = new T.BoxGeometry(sx, sy, sz), uv = geo.attributes.uv, dim = [[sz, sy], [sz, sy], [sx, sz], [sx, sz], [sx, sy], [sx, sy]];
@@ -730,8 +749,9 @@ function bake(list, geo, mat, plane, gain) {
 }
 const neonMat = new T.MeshBasicMaterial({color:0xffffff});
 const trimRound = roundify(trimMat.clone(), 0.05);
-const newKit = h => ({box:[], cyl:[], gd:[], l0:[], l1:[], neon:[], single:[], h});
-const finish = B => ({singles:B.single, h:B.h, signs:B.signs || [], shop:!!B.shop, glow:B.glow || 0, photos:B.photos || [], inst:[bake(B.neon, BOX, neonMat, false, 3.4), bake(B.box, BOX, trimRound), bake(B.cyl, CYL, trimMat), bake(B.gd, PLANE, winMat, true), bake(B.l0, PLANE, litMats[0], true), bake(B.l1, PLANE, litMats[1], true)].filter(Boolean)});
+const railMat = new T.MeshStandardMaterial({color:C(0x9fc4c8), transparent:true, opacity:0.3, roughness:0.08, metalness:0.3, envMapIntensity:1.6, depthWrite:false});
+const newKit = h => ({box:[], cyl:[], gd:[], l0:[], l1:[], neon:[], rail:[], single:[], h});
+const finish = B => ({singles:B.single, h:B.h, signs:B.signs || [], shop:!!B.shop, glow:B.glow || 0, photos:B.photos || [], inst:[bake(B.neon, BOX, neonMat, false, 3.4), bake(B.box, BOX, trimRound), bake(B.rail, BOX, railMat), bake(B.cyl, CYL, trimMat), bake(B.gd, PLANE, winMat, true), bake(B.l0, PLANE, litMats[0], true), bake(B.l1, PLANE, litMats[1], true)].filter(Boolean)});
 function instKit(k) {
   const g = new T.Group();
   for (const q of k.singles) { const m = new T.Mesh(q.geo, q.mat); m.position.fromArray(q.p); if (q.s) m.scale.fromArray(q.s); g.add(m); }
@@ -748,7 +768,7 @@ function windowAt(B, y, z, w, h, o) {
 const BW = SLOT - 0.8, BD = 13;
 function masonry(o) {
   const B = newKit(o.H), W = BW, gh = o.shop ? 4.4 : 1.3, fl = Math.max(1, Math.floor((o.H - gh - (o.cornice ? 1.3 : 0.6)) / o.floorH)), bw = W / o.bays;
-  B.single.push({geo:ubox(BD, o.H, W), mat:o.wall, p:[BD / 2, o.H / 2, 0]});
+  B.single.push({geo:rwall(BD, o.H, W, 0.3), mat:o.wall, p:[BD / 2, o.H / 2, 0]});
   for (let f = 0; f < fl; f++) {
     const y = gh + f * o.floorH + o.floorH * 0.54;
     for (let b = 0; b < o.bays; b++) { const z = -W / 2 + (b + 0.5) * bw; windowAt(B, y, z, o.ribbon ? bw * 0.86 : bw * 0.5, o.floorH * (o.ribbon ? 0.5 : 0.6), {frame:o.frame, lit:o.lit, sill:o.ribbon ? 0 : o.trim, lintel:o.ribbon ? 0 : o.trim});
@@ -781,6 +801,16 @@ function masonry(o) {
     if (nb) { B.neon.push([-0.66, o.H - 0.22, 0, 0.05, 0.05, W + 0.8, nb]); for (const k of [-1, 1]) B.neon.push([-0.17, gh + (o.H - gh) / 2, k * (W / 2 - 0.03), 0.05, o.H - gh, 0.05, nb]); }
     if (o.shop && o.shop.awning) for (let i = 0; i < 3; i++) B.neon.push([-1.8, 2.82, -W / 2 + (i + 0.5) * W / 3, 0.04, 0.04, W / 3 - 0.5, na]); }
   else if (o.shop) B.glow = 0xffc890;
+  if (o.mansard) { const slate = 0x2e3036, ang = 0.32, mh = 2.5, nd = o.bays >= 4 ? 2 : 1;
+    B.box.push([0.42, o.H + mh / 2, 0, 0.16, mh / Math.cos(ang), W + 0.3, slate, [0, 0, -ang]], [1.6, o.H + mh, 0, 2.4, 0.14, W + 0.3, slate]);
+    for (let k = 0; k < nd; k++) { const z = nd === 1 ? 0 : (k - 0.5) * W / 2;
+      B.box.push([0.3, o.H + 1.15, z, 0.9, 1.5, 1.3, o.trim], [0.3, o.H + 2.08, z - 0.34, 1.0, 0.07, 0.82, slate, [-0.6, 0, 0]], [0.3, o.H + 2.08, z + 0.34, 1.0, 0.07, 0.82, slate, [0.6, 0, 0]]);
+      windowAt(B, o.H + 1.1, z, 0.72, 1.0, {x:-0.15, frame:o.trim, lit:o.lit}); } }
+  if (o.oriel) { const top = gh + fl * o.floorH, yc = (gh + top) / 2 + 0.1;
+    for (let b = 0; b < o.bays; b += 2) { const z = -W / 2 + (b + 0.5) * bw;
+      B.box.push([-0.36, yc, z, 0.72, top - gh - 0.2, bw * 0.84, o.trim], [-0.42, top + 0.12, z, 0.88, 0.24, bw * 0.84 + 0.16, o.trim], [-0.32, gh + 0.06, z, 0.62, 0.32, bw * 0.74, o.trim]);
+      for (let f = 0; f < fl; f++) windowAt(B, gh + f * o.floorH + o.floorH * 0.54, z, bw * 0.52, o.floorH * 0.6, {x:-0.72, frame:o.frame, lit:o.lit, sill:o.trim}); } }
+  if (o.pediment) B.cyl.push([-0.08, o.H + 0.35, 0, 1.8, 0.42, 1.8, o.trim, [0, 0, Math.PI / 2]]);
   if (o.tank) { B.cyl.push([4, o.H + 2.6, 2, 1.35, 2.4, 1.35, 0x4a3a2c], [4, o.H + 3.95, 2, 1.5, 0.3, 1.5, 0x2a2420]); for (const dx of [-0.9, 0.9]) for (const dz of [-0.9, 0.9]) B.box.push([4 + dx, o.H + 0.7, 2 + dz, 0.12, 1.4, 0.12, 0x2a2420]); }
   return finish(B);
 }
@@ -790,7 +820,7 @@ const photoMats = {};
 const photoMatFor = (name, glow, gain) => photoMats[name] || (photoMats[name] = new T.MeshStandardMaterial({color:new T.Color(1.55, 1.55, 1.55), map:photoTex(name + '.jpg'), emissiveMap:glow ? photoTex(name + '-glow.jpg') : null, emissive:glow ? new T.Color(gain, gain, gain) : new T.Color(0, 0, 0), roughness:0.82, envMapIntensity:0.5}));
 function photoFront(o) { // o.panels: [{img, glow, w, h, z}] in metres, bottom edge at o.y0
   const B = newKit(o.H), W = BW, sb = W / 3, y0 = o.y0 || 0.02;
-  B.single.push({geo:ubox(BD, o.H, W), mat:o.wall, p:[BD / 2, o.H / 2, 0]});
+  B.single.push({geo:rwall(BD, o.H, W, 0.3), mat:o.wall, p:[BD / 2, o.H / 2, 0]});
   if (o.base) { for (let i = 0; i <= 3; i++) B.box.push([-0.12, y0 / 2, clamp(-W / 2 + i * sb, -W / 2 + 0.26, W / 2 - 0.26), 0.36, y0, 0.5, o.pier || 0x5a2a24]);
     for (let i = 0; i < 3; i++) { const z = -W / 2 + (i + 0.5) * sb; glassAt(B, 0.02, y0 / 2 + 0.1, z, sb - 0.6, y0 - 0.3, 0.8); B.box.push([-0.04, 0.14, z, 0.16, 0.28, sb - 0.5, 0x1c1e24]); } }
   B.box.push([-0.3, o.H - 0.38, 0, 0.9, 0.3, W + 0.5, o.trim || 0x8a8070], [-0.42, o.H - 0.1, 0, 1.2, 0.2, W + 0.8, o.trim || 0x8a8070]);
@@ -800,7 +830,7 @@ function photoFront(o) { // o.panels: [{img, glow, w, h, z}] in metres, bottom e
 }
 function mansion(col, stoneWall, leaf) { // Rosedale: a big brick or stone house set back behind a lawn, hedge and tree
   const B = newKit(13), W = BW, SB = 5.4, H = 8.8, D = BD - SB, white = 0xe8e4da, wall = wallMat(stoneWall ? 'stone' : 'brickRed', col), roof = lam(0x2a2826);
-  B.single.push({geo:ubox(D, H, W - 1.6), mat:wall, p:[SB + D / 2, H / 2, 0]}, {geo:gableGeo(W - 0.6, 4.4, D + 0.6), mat:roof, p:[SB + D / 2, H, 0]});
+  B.single.push({geo:rwall(D, H, W - 1.6, 0.25), mat:wall, p:[SB + D / 2, H / 2, 0]}, {geo:gableGeo(W - 0.6, 4.4, D + 0.6), mat:roof, p:[SB + D / 2, H, 0]});
   B.box.push([SB - 0.12, H + 0.1, 0, 0.5, 0.26, W - 0.4, white], [SB + 0.25, H + 2.2, 0, 0.12, 4.0, 0.12, white]);
   for (const f of [0, 1]) for (let i = 0; i < 4; i++) { const z = -W / 2 + 1.9 + i * (W - 3.8) / 3; if (f === 0 && (i === 1 || i === 2)) continue; windowAt(B, 2.1 + f * 3.4, z, 1.15, 1.8, {x:SB, frame:white, lit:0.5, sill:white, lintel:white}); }
   windowAt(B, H + 1.5, 0, 1.0, 1.3, {x:SB, frame:white, lit:0.45, sill:white});
@@ -814,18 +844,20 @@ function mansion(col, stoneWall, leaf) { // Rosedale: a big brick or stone house
   return finish(B);
 }
 function tower(o) {
-  const B = newKit(o.H), W = BW, bw = W / 4;
-  B.single.push({geo:BOX, mat:o.mat, p:[BD / 2, o.H / 2 + 3.6, 0], s:[BD, o.H - 7.2, W]}, {geo:ubox(BD - 0.2, 7.2, W - 0.1), mat:o.base, p:[BD / 2 + 0.1, 3.6, 0]});
+  const B = newKit(o.H), W = BW, bw = W / 4, rad = o.balc ? 2.6 : 1.5, body = o.H - 7.2, hMain = body * 0.8, hUp = body - hMain, top = 7.2 + hMain;
+  B.single.push({geo:rwall(BD, hMain, W, rad, 1 / W, 1 / body), mat:o.mat, p:[BD / 2, 7.2 + hMain / 2, 0]}, {geo:rwall(BD * 0.78, hUp, W * 0.8, rad * 0.8, 1 / W, 1 / body), mat:o.mat, p:[BD / 2 + BD * 0.1, top + hUp / 2, 0]},
+    {geo:ubox(BD - 0.2, 7.2, W - 0.1), mat:o.base, p:[BD / 2 + 0.1, 3.6, 0]});
   for (let i = 0; i < 4; i++) { const z = -W / 2 + (i + 0.5) * bw; glassAt(B, -0.05, 3.3, z, bw - 0.8, 5.4, 0.45); B.box.push([-0.1, 3.3, z - bw / 2, 0.5, 6.6, 0.6, o.fin], [-0.09, 3.3, z, 0.12, 5.4, 0.06, 0x1c1e24]); }
   B.box.push([-0.1, 3.3, W / 2 - 0.3, 0.5, 6.6, 0.6, o.fin], [-1.2, 6.5, 0, 2.6, 0.24, W * 0.62, o.fin], [-0.06, 7.1, 0, 0.4, 0.5, W, o.fin]);
-  for (let z = -W / 2 + 0.3; z <= W / 2; z += 1.58) B.box.push([-0.16, 7.2 + (o.H - 7.2) / 2, z, 0.34, o.H - 7.2, 0.13, o.fin]);
-  for (let y = 19; y < o.H - 4; y += 13.5) B.box.push([-0.1, y, 0, 0.26, 0.55, W, o.fin]);
-  B.box.push([BD / 2, o.H + 1.6, 0, BD * 0.6, 3.2, W * 0.6, 0x1c1e24], [-2.48, 6.5, 0, 0.1, 0.84, W * 0.62, 0x14161c]); B.signs = [{x:-2.55, y:6.5, z:0, w:W * 0.6, h:0.64}]; B.neon.push([-1.2, 6.36, 0, 2.3, 0.03, W * 0.58, 0xdfe8ff]); B.glow = 0xffd9a8;
+  B.box.push([BD / 2 + BD * 0.1, top + 0.15, 0, BD * 0.86, 0.3, W * 0.88, o.fin]); // ledge where the crown steps back
+  if (o.balc) { const bwid = W - 2 * rad - 0.2; for (let y = 10.2; y < top - 1; y += 3) B.box.push([-0.72, y, 0, 1.44, 0.18, bwid, 0xb4b8c0], [-1.4, y + 1.03, 0, 0.07, 0.05, bwid, 0x9aa0aa]), B.rail.push([-1.41, y + 0.56, 0, 0.03, 0.92, bwid]); }
+  else { for (let z = -W / 2 + rad; z <= W / 2 - rad; z += 1.58) B.box.push([-0.16, 7.2 + hMain / 2, z, 0.34, hMain, 0.13, o.fin]); for (let y = 19; y < top - 2; y += 13.5) B.box.push([-0.1, y, 0, 0.26, 0.55, W - 2 * rad, o.fin]); }
+  B.box.push([BD / 2 + 1.3, o.H + 1.6, 0, BD * 0.5, 3.2, W * 0.5, 0x1c1e24], [-2.48, 6.5, 0, 0.1, 0.84, W * 0.62, 0x14161c]); B.signs = [{x:-2.55, y:6.5, z:0, w:W * 0.6, h:0.64}]; B.neon.push([-1.2, 6.36, 0, 2.3, 0.03, W * 0.58, 0xdfe8ff]); B.glow = 0xffd9a8;
   return finish(B);
 }
 function colonnade() {
   const B = newKit(17), W = BW, stone = wallMat('stone'), lt = 0xa39c8e, n = 6;
-  B.single.push({geo:ubox(BD, 17, W), mat:stone, p:[BD / 2 + 1.7, 8.5, 0]});
+  B.single.push({geo:rwall(BD, 17, W, 0.2), mat:stone, p:[BD / 2 + 1.7, 8.5, 0]});
   B.box.push([0.3, 0.6, 0, 3.0, 1.2, W, 0x8a8478], [-1.45, 0.4, 0, 0.5, 0.8, W, 0x7f796d], [-1.9, 0.2, 0, 0.5, 0.4, W, 0x7f796d]);
   for (let i = 0; i < n; i++) { const z = -W / 2 + 1.15 + i * (W - 2.3) / (n - 1);
     B.cyl.push([-0.3, 6.3, z, 0.5, 9.6, 0.5, lt], [-0.3, 1.42, z, 0.62, 0.2, 0.62, lt], [-0.3, 11.02, z, 0.6, 0.18, 0.6, lt]); B.box.push([-0.3, 1.3, z, 1.3, 0.2, 1.3, lt], [-0.3, 11.25, z, 1.35, 0.3, 1.35, lt]);
@@ -872,19 +904,19 @@ const leafA = lam(0x8a4a1c), leafB = lam(0x9a6a22), leafC = lam(0x5a3a1a);
 const KITS = [
   [colonnade, () => masonry({H:22, bays:5, floorH:3.7, wall:stoneW, trim:0x9a9488, frame:0x26282c, lit:0.22, pil:true, cornice:true}), () => masonry({H:28, bays:6, floorH:3.5, wall:paleStone, trim:0x8a8478, frame:0x26282c, lit:0.2, pil:true, cornice:true, tank:true})],
   [() => tower({H:78, mat:facade('#0f1724', '#1d2940', '#aad2f0', 9, 30, 0.12), base:stoneW, fin:0x8d97a6}), () => tower({H:58, mat:facade('#161b24', '#1d2940', '#aad2f0', 8, 24, 0.1), base:darkPanel, fin:0x3a4250}), () => tower({H:66, mat:facade('#33260f', '#6b5220', '#f0be50', 9, 26, 0.3), base:stoneW, fin:0x6a5430})],
-  [() => masonry({H:24, bays:5, floorH:3.4, wall:brickB, trim:0x8a8478, frame:0x1c1e22, lit:0.24, cornice:true, escape:true, tank:true}), () => masonry({H:32, bays:4, floorH:3.6, wall:conc, trim:0x5d6068, frame:0x1c1e22, lit:0.2, ribbon:true}), () => masonry({H:19, bays:5, floorH:3.5, wall:stoneW, trim:0x9a9488, frame:0x26282c, lit:0.25, pil:true, cornice:true, shop:{sign:0x23262e, awning:0x2f4a3a}, neon:[0xff5a30, 0]}),
+  [() => masonry({H:24, bays:5, floorH:3.4, wall:brickB, trim:0x8a8478, frame:0x1c1e22, lit:0.24, cornice:true, escape:true, tank:true}), () => masonry({H:32, bays:4, floorH:3.6, wall:conc, trim:0x5d6068, frame:0x1c1e22, lit:0.2, ribbon:true}), () => masonry({mansard:true, H:19, bays:5, floorH:3.5, wall:stoneW, trim:0x9a9488, frame:0x26282c, lit:0.25, pil:true, cornice:true, shop:{sign:0x23262e, awning:0x2f4a3a}, neon:[0xff5a30, 0]}),
    () => photoFront({H:12.7, wall:brickR, panels:[{img:'queen-steves', glow:true, w:9.55, h:12.2}]}), () => photoFront({H:13.4, wall:brickB, panels:[{img:'queen-neon', glow:true, w:6.35, h:9.85, z:-3.4}, {img:'queen-mural', w:6.8, h:13.0, z:3.18}]}),
    () => photoFront({H:10.5, y0:3.0, base:true, pier:0x15171c, wall:wallMat('clap', 0x3a322c), trim:0x2a2622, panels:[{img:'queen-horseshoe', glow:true, w:7.15, h:7.1}]})],
   [() => masonry({H:30, bays:4, floorH:3.6, wall:darkPanel, trim:0x565e6c, frame:0x9aa2b0, lit:0.3, ribbon:true, shop:{sign:0x14161c}, neon:[0xff40c0, 0x40d0ff]}), () => masonry({H:24, bays:5, floorH:3.5, wall:conc, trim:0x5d6068, frame:0x1c1e22, lit:0.28, ribbon:true, shop:{sign:0x7a1f6a}, neon:[0x40d0ff, 0xff40c0]}), () => masonry({H:38, bays:5, floorH:3.6, wall:darkPanel, trim:0x4a5260, frame:0x9aa2b0, lit:0.26, ribbon:true, shop:{sign:0x14161c}, neon:[0xff40c0, 0x40d0ff]})],
-  [() => masonry({H:10.4, bays:4, floorH:3.0, wall:brickR, trim:0x8a8070, frame:0x2a1c18, lit:0.4, cornice:true, shop:{sign:0xc4281c, awning:0xa8201a}, neon:[0xff3a30, 0x30ffb0]}), () => masonry({H:13.4, bays:4, floorH:3.0, wall:brickB, trim:0x8a8070, frame:0x2a1c18, lit:0.36, cornice:true, escape:true, shop:{sign:0xd6a42a, awning:0xb88a1c}, neon:[0xffb030, 0xff3a30]}), () => masonry({H:10.4, bays:3, floorH:3.0, wall:brickR, trim:0x8a8070, frame:0xe0d8c8, lit:0.4, cornice:true, tank:true, shop:{sign:0x1f6b4a, awning:0xa8201a}, neon:[0x30ffb0, 0xff3a30]}), () => photoFront({H:9.4, y0:2.18, base:true, wall:brickB, neon:[0xff3a30, 0x30ffb0], glowCol:0xff5a40, panels:[{img:'chinatown-a', glow:true, w:BW, h:5.45}]})],
+  [() => masonry({pediment:true, H:10.4, bays:4, floorH:3.0, wall:brickR, trim:0x8a8070, frame:0x2a1c18, lit:0.4, cornice:true, shop:{sign:0xc4281c, awning:0xa8201a}, neon:[0xff3a30, 0x30ffb0]}), () => masonry({mansard:true, H:13.4, bays:4, floorH:3.0, wall:brickB, trim:0x8a8070, frame:0x2a1c18, lit:0.36, cornice:true, escape:true, shop:{sign:0xd6a42a, awning:0xb88a1c}, neon:[0xffb030, 0xff3a30]}), () => masonry({oriel:true, H:10.4, bays:3, floorH:3.0, wall:brickR, trim:0x8a8070, frame:0xe0d8c8, lit:0.4, cornice:true, tank:true, shop:{sign:0x1f6b4a, awning:0xa8201a}, neon:[0x30ffb0, 0xff3a30]}), () => photoFront({H:9.4, y0:2.18, base:true, wall:brickB, neon:[0xff3a30, 0x30ffb0], glowCol:0xff5a40, panels:[{img:'chinatown-a', glow:true, w:BW, h:5.45}]})],
   [() => houses([0x8f4456, 0x347c82]), () => houses([0xbc8834, 0x56689c]), () => houses([0x64883e, 0xa8563a]), () => houses([0x4a6e9a, 0xc2b08a])],
-  [() => masonry({H:10.6, bays:3, floorH:3.0, wall:brickR, trim:0xe8e4da, frame:0x1c1e22, lit:0.45, cornice:true, shop:{sign:0x111214, awning:0x15171c}, neon:[0xfff0d8, 0]}), () => houses([0x4a3c36, 0x2f3a46]),
-   () => tower({H:86, mat:facade('#1a1d24', '#2a3240', '#ffe6c0', 9, 32, 0.22), base:paleStone, fin:0x8a8478})],
+  [() => masonry({mansard:true, oriel:true, H:10.6, bays:3, floorH:3.0, wall:brickR, trim:0xe8e4da, frame:0x1c1e22, lit:0.45, cornice:true, shop:{sign:0x111214, awning:0x15171c}, neon:[0xfff0d8, 0]}), () => houses([0x4a3c36, 0x2f3a46]),
+   () => tower({balc:true, H:86, mat:facade('#1a1d24', '#2a3240', '#ffe6c0', 9, 32, 0.22), base:paleStone, fin:0x8a8478})],
   [() => mansion(0xffffff, false, leafA), () => mansion(0xd8d0c0, true, leafB), () => mansion(0xc8b8a8, false, leafC)],
-  [() => masonry({H:22, bays:5, floorH:3.4, wall:conc, trim:0x5d6068, frame:0x1c1e22, lit:0.26, ribbon:true, shop:{sign:0x1c2a3a}, neon:[0xffd28a, 0]}), () => masonry({H:16, bays:4, floorH:3.2, wall:brickB, trim:0x8a8070, frame:0x1c1e22, lit:0.32, cornice:true, shop:{sign:0x23262e, awning:0x2a3a5a}, neon:[0xffd28a, 0]}),
-   () => tower({H:64, mat:facade('#14181f', '#22303e', '#cfe4ff', 8, 26, 0.16), base:stoneW, fin:0x5a6270})],
-  [() => tower({H:98, mat:facade('#0f1a22', '#1c3040', '#bfe8ff', 9, 34, 0.24), base:darkPanel, fin:0x9aa2b0}), () => masonry({H:20, bays:4, floorH:3.6, wall:darkPanel, trim:0x4a5260, frame:0x9aa2b0, lit:0.3, ribbon:true, shop:{sign:0x14161c}, neon:[0x40d0ff, 0xff40c0]}),
-   () => tower({H:78, mat:facade('#161b24', '#1d2940', '#ffe0b0', 8, 28, 0.2), base:stoneW, fin:0x3a4250})],
+  [() => masonry({H:22, bays:5, floorH:3.4, wall:conc, trim:0x5d6068, frame:0x1c1e22, lit:0.26, ribbon:true, shop:{sign:0x1c2a3a}, neon:[0xffd28a, 0]}), () => masonry({oriel:true, pediment:true, H:16, bays:4, floorH:3.2, wall:brickB, trim:0x8a8070, frame:0x1c1e22, lit:0.32, cornice:true, shop:{sign:0x23262e, awning:0x2a3a5a}, neon:[0xffd28a, 0]}),
+   () => tower({balc:true, H:64, mat:facade('#14181f', '#22303e', '#cfe4ff', 8, 26, 0.16), base:stoneW, fin:0x5a6270})],
+  [() => tower({balc:true, H:98, mat:facade('#0f1a22', '#1c3040', '#bfe8ff', 9, 34, 0.24), base:darkPanel, fin:0x9aa2b0}), () => masonry({H:20, bays:4, floorH:3.6, wall:darkPanel, trim:0x4a5260, frame:0x9aa2b0, lit:0.3, ribbon:true, shop:{sign:0x14161c}, neon:[0x40d0ff, 0xff40c0]}),
+   () => tower({balc:true, H:78, mat:facade('#161b24', '#1d2940', '#ffe0b0', 8, 28, 0.2), base:stoneW, fin:0x3a4250})],
 ].map(list => list.map(f => f()));
 // storefront names, lettered in each shop's familiar colours
 const STORES = [
