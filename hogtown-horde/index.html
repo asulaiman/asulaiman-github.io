@@ -1477,22 +1477,32 @@ function drop(e) { scene.remove(e.mesh); }
 function tokens(lane, z, n, arc) { for (let k = 0; k < n; k++) { const u = n > 1 ? k / (n - 1) : 0; add('token', lane, z - k * 1.6, {y: arc ? 0.9 + Math.sin(u * Math.PI) * 1.2 : 0.75}); } }
 const LOWS = ['cone', 'bin', 'barrier', 'pit'];
 const SOLID = {car:1, tram:1, zombie:1, cyclist:1, barrier:2, bin:2, cone:2, pit:2}; // 2 = low enough for a coyote to leap
-function laneBlocked(l, e, ahead, leapLow) { const x = LANES[l];
+const SEEN = new Set(); try { for (const k of JSON.parse(localStorage.getItem('hogtown-seen') || '[]')) SEEN.add(k); } catch (e) {}
+function seenOnce(key) { if (SEEN.has(key)) return false; SEEN.add(key); try { localStorage.setItem('hogtown-seen', JSON.stringify([...SEEN])); } catch (e) {} return true; }
+function toast(msg) { if (seenOnce('t:' + msg)) { S.toast = msg; S.toastT = S.t; } }
+const laneX = l => l < 0 ? -5.9 : l > 2 ? 5.9 : LANES[l]; // -1 and 3 are the gutters by the kerb, for going round a jam
+function laneBlocked(l, e, ahead, leapLow) { const x = laneX(l);
   return ents.some(o => o !== e && !o.gone && !(o.dead > 0) && !o.flee && SOLID[o.type] && !(leapLow && SOLID[o.type] === 2) && Math.abs(o.x - x) < o.hw + 0.45 && o.z - e.z > -1.4 - o.len / 2 && o.z - e.z < ahead + o.len / 2); }
 function roam(e, dt, kind) { // kind: true = coyote, false = zombie, 'car'. Returns true when it has to wait.
-  const coyote = kind === true, car = kind === 'car', k = clamp((S.dist - 600) / 2400, 0, 1), ahead = car ? 8 : coyote ? 5 : 3, x0 = e.x;
+  const coyote = kind === true, car = kind === 'car', k = clamp((S.dist - 600) / 2400, 0, 1), ahead = car ? 8 : coyote ? 5 : 3, x0 = e.x, lo = car ? 0 : -1, hi = car ? 2 : 3;
   if (e.lane === undefined) e.lane = clamp(Math.round(e.x / 2.4) + 1, 0, 2);
   e.wt = (e.wt === undefined ? rnd(0.5, 1.6) : e.wt) - dt;
-  const blocked = laneBlocked(e.lane, e, ahead, coyote), committed = e.z > -7; // in the last few metres it holds its line, so a dodge stays possible
+  const blocked = !e.hop && laneBlocked(e.lane, e, ahead, coyote), committed = e.z > -7; // in the last few metres it holds its line, so a dodge stays possible
   if (blocked || (!committed && k > 0 && e.wt <= 0)) {
-    const free = [e.lane - 1, e.lane + 1].filter(l => l >= 0 && l <= 2 && !laneBlocked(l, e, ahead + 2, coyote));
-    if (blocked) { if (free.length) e.lane = free.sort((a, b) => Math.abs(a - P.lane) - Math.abs(b - P.lane))[0]; } // round the obstacle, on the runner's side
-    else if (e.lane !== P.lane) { const step = e.lane + Math.sign(P.lane - e.lane); if (free.includes(step)) e.lane = step; } // close in on the runner's lane
+    const free = [e.lane - 1, e.lane + 1].filter(l => l >= lo && l <= hi && !laneBlocked(l, e, ahead + 2, coyote));
+    const pass = free.length ? free : [e.lane - 1, e.lane + 1].filter(l => l >= lo && l <= hi && !laneBlocked(l, e, 1.2, coyote)); // squeeze past even if the next gap is short
+    if (blocked) { if (pass.length) e.lane = pass.sort((a, b) => Math.abs(a - P.lane) - Math.abs(b - P.lane))[0]; } // round the obstacle, on the runner's side
+    else if (e.lane !== P.lane) { const step = e.lane + Math.sign(P.lane - e.lane); if (free.includes(step) && step >= 0 && step <= 2) e.lane = step; } // close in on the runner's lane
+    else if (e.lane < 0 || e.lane > 2) e.lane = clamp(e.lane, 0, 2);
     e.wt = (coyote ? rnd(0.9, 1.8) : car ? rnd(2.2, 4) : rnd(1.5, 3)) / (0.4 + k); }
-  const sp = (coyote ? 3.5 + 4 * k : car ? 2 + 2.5 * k : 1.2 + 2.2 * k) * dt, tx = LANES[e.lane] + (coyote ? Math.sin(S.t * 2.2 + e.ph) * 0.12 : 0);
+  if (!blocked && (e.lane < 0 || e.lane > 2) && !laneBlocked(clamp(e.lane, 0, 2), e, ahead + 2, coyote)) e.lane = clamp(e.lane, 0, 2); // back onto the road once clear
+  const sp = (coyote ? 3.5 + 4 * k : car ? 2 + 2.5 * k : 1.2 + 2.2 * k) * dt, tx = laneX(e.lane) + (coyote ? Math.sin(S.t * 2.2 + e.ph) * 0.12 : 0);
   e.x += clamp(tx - e.x, -sp, sp); e.mesh.position.x = e.x; e.lv = (e.x - x0) / Math.max(dt, 1e-3);
-  if (coyote && !e.hop && ents.some(o => SOLID[o.type] === 2 && !o.gone && Math.abs(o.x - e.x) < o.hw + 0.4 && o.z - e.z > 0.4 && o.z - e.z < 1.6 + o.len / 2)) e.hop = 0.5;
-  return Math.abs(e.x - LANES[e.lane]) < 0.3 && laneBlocked(e.lane, e, car ? 3 : 1.6, coyote);
+  if (coyote && !e.hop && ents.some(o => SOLID[o.type] === 2 && !o.gone && Math.abs(o.x - e.x) < o.hw + 0.4 && o.z - e.z > 0.4 && o.z - e.z < 1.6 + o.len / 2)) { e.hop = e.hopDur = 0.5; e.hopH = 1.1; }
+  const stuck = !e.hop && Math.abs(e.x - laneX(e.lane)) < 0.3 && laneBlocked(e.lane, e, car ? 3 : 1.6, coyote);
+  e.stuck = stuck ? (e.stuck || 0) + dt : 0;
+  if (coyote && e.stuck > 0.35) { e.hop = e.hopDur = 0.8; e.hopH = 2.1; e.stuck = 0; return false; } // boxed in: leap the car
+  return stuck;
 }
 function zombie(lane, z, fast) { const d = dIndex(S.dist - z); add('zombie', lane, z, {fast, vs: (fast ? rnd(5, 7) : rnd(1, 2.2)) * (1 + 1.3 * clamp((S.dist - 600) / 2400, 0, 1)), top: d === 1 ? 0x3b4252 : pick(ZTOP), tie: d === 1}); }
 function spawnRow() {
@@ -1712,14 +1722,14 @@ function update(dt) {
   for (const e of ents) {
     if (e.type === 'zombie') {
       if (e.dead > 0) { e.dead += dt; e.z += dz; e.mesh.position.z = e.z; e.mesh.rotation.x = Math.min(1.5, e.dead * 7); e.mesh.position.y = -e.dead * 0.2; continue; }
-      if (e.who && !e.said && e.z > -62) { e.said = true; S.toast = 'Zombie ' + WHO[e.who].name + ' ahead!'; S.toastT = S.t; }
+      if (e.who && !e.said && e.z > -62) { e.said = true; toast('Zombie ' + WHO[e.who].name + ' ahead!'); }
       if (e.stun > 0) e.stun -= dt; else { const wait = e.fast ? false : roam(e, dt, false); if (!wait) e.z += e.vs * dt; if (!e.fast) e.mesh.rotation.y = clamp(Math.atan2(e.lv || 0, Math.max(e.vs, 0.5)), -0.9, 0.9); } if (e.fast && e.z < -6) { const sx = 2.6 * dt; e.x += clamp(P.x - e.x, -sx, sx); e.mesh.position.x = e.x; }
       pose(e.mesh.userData.z, e.stun > 0 ? e.ph : S.t * (e.fast ? 14 : 3.8 * clamp(e.vs, 1.2, 4)) + e.ph); if (e.who) e.mesh.userData.z.rotation.x = e.stun > 0 ? 0.35 : 0;
     } else if (e.type === 'coyote') {
-      if (!e.howled && e.z > -78) { e.howled = true; tone(500, 0.5, 'sine', 0.05, 900); setTimeout(() => tone(880, 0.7, 'sine', 0.04, 560), 380); if (S.t - (S.toastT || -9) > 2) { S.toast = 'Coyotes on the street!'; S.toastT = S.t; } }
+      if (!e.howled && e.z > -78) { e.howled = true; tone(500, 0.5, 'sine', 0.05, 900); setTimeout(() => tone(880, 0.7, 'sine', 0.04, 560), 380); toast('Coyotes on the street!'); }
       if (e.flee) { e.x += e.flee * 9 * dt; e.mesh.position.x = e.x; e.mesh.position.y = 0; e.mesh.rotation.y = Math.PI + Math.atan2(e.flee * 9, 0.6); if (Math.abs(e.x) > 9) e.gone = true; }
       else { const wait = roam(e, dt, true); if (!wait) e.z += e.vs * dt; e.mesh.rotation.y = Math.PI + clamp(Math.atan2(e.lv || 0, Math.max(e.vs, 1)), -0.9, 0.9);
-        if (e.hop) { e.hop = Math.max(0, e.hop - dt); e.mesh.position.y = Math.sin(Math.PI * (1 - e.hop / 0.5)) * 1.1; if (!e.hop) e.mesh.position.y = 0; } }
+        if (e.hop) { e.hop = Math.max(0, e.hop - dt); e.mesh.position.y = Math.sin(Math.PI * (1 - e.hop / (e.hopDur || 0.5))) * (e.hopH || 1.1); if (!e.hop) e.mesh.position.y = 0; } }
       const u = e.mesh.userData, ph = S.t * 17 + e.ph; u.legs[0].rotation.x = Math.sin(ph) * 0.95; u.legs[1].rotation.x = Math.sin(ph + 0.5) * 0.95; u.legs[2].rotation.x = Math.sin(ph + 2.6) * 0.95; u.legs[3].rotation.x = Math.sin(ph + 3.1) * 0.95; u.body.position.y = Math.abs(Math.sin(ph)) * 0.07; u.body.rotation.x = Math.sin(ph) * 0.06;
     } else if (e.type === 'cyclist') {
       if (!e.go && e.z > -34) { e.go = true; const tHit = Math.max(0.6, -e.z / v); e.vx = clamp(Math.abs(LANES[P.lane] - e.x) / tHit, 3.2, 10) * e.dir; tone(1700, 0.07, 'triangle', 0.05); setTimeout(() => tone(1700, 0.09, 'triangle', 0.05), 130); }
@@ -1741,14 +1751,14 @@ function update(dt) {
     if (e.z < -half || e.z > half || Math.abs(P.x - e.x) > e.hw + (e.hint ? 0.18 : 0.4) || P.y >= e.y1 || P.y + ph <= e.y0) continue;
     if (e.type === 'token') { e.hit = e.gone = true; S.tokens++; tone(1200, 0.07, 'square', 0.03, 1700); }
     else if (e.type === 'puck') { e.hit = e.gone = true; S.pucks = Math.min(9, S.pucks + 2); tone(700, 0.1, 'square', 0.04, 1000); }
-    else if (e.type === 'coffee') { e.hit = e.gone = true; S.gap = Math.min(100, S.gap + 30); S.toast = 'Tim Hortons! +9 m lead'; S.toastT = S.t; P.inv = Math.max(P.inv, 0.4); tone(520, 0.25, 'triangle', 0.06, 1040); puff(P.x, 1, 0, 0xffb347, 10, 2.5); }
+    else if (e.type === 'coffee') { e.hit = e.gone = true; S.gap = Math.min(100, S.gap + 30); toast('Tim Hortons! +9 m lead'); P.inv = Math.max(P.inv, 0.4); tone(520, 0.25, 'triangle', 0.06, 1040); puff(P.x, 1, 0, 0xffb347, 10, 2.5); }
     else if (e.flee) continue;
     else if (P.inv <= 0) { e.hit = true; hurt(e.type === 'zombie' ? 36 : e.type === 'tram' ? 30 : e.type === 'coyote' ? 22 : 26, e.type === 'zombie' || e.type === 'coyote'); }
   }
   for (const s of shots) {
     s.z -= 46 * dt; s.m.position.z = s.z;
     for (const e of ents) if (e.type === 'zombie' && !e.dead && !s.gone && Math.abs(e.x - s.x) < 0.85 && s.z < e.z + 0.8 && s.z > e.z - 2) {
-      if (e.who) { e.stun = 1.6; s.gone = true; S.toast = 'Zombie ' + WHO[e.who].name + ' is only stunned!'; S.toastT = S.t; puff(e.x, 1.3, e.z, 0xc8d0a0, 6, 2); tone(240, 0.15, 'square', 0.05, 120); }
+      if (e.who) { e.stun = 1.6; s.gone = true; toast('Zombie ' + WHO[e.who].name + ' is only stunned!'); puff(e.x, 1.3, e.z, 0xc8d0a0, 6, 2); tone(240, 0.15, 'square', 0.05, 120); }
       else { e.dead = 0.001; e.hit = true; s.gone = true; S.kills++; puff(e.x, 1.2, e.z, 0x8fbf6a, 12, 3); tone(180, 0.2, 'sawtooth', 0.07, 60); }
     }
     for (const e of ents) if (e.type === 'coyote' && !e.flee && !s.gone && Math.abs(e.x - s.x) < 0.8 && s.z < e.z + 0.9 && s.z > e.z - 2.2) { e.flee = e.x >= 0 ? 1 : -1; e.hit = true; s.gone = true; puff(e.x, 0.6, e.z, 0xc4b494, 6, 2); tone(900, 0.18, 'sawtooth', 0.05, 1500); }
@@ -1757,7 +1767,8 @@ function update(dt) {
   shots = shots.filter(s => !s.gone);
   ents = ents.filter(e => { const out = e.gone || e.z - e.len / 2 > 12 || e.dead > 1.2; if (out) drop(e); return !out; });
   stepParts(dt);
-  S.hint = S.dist < 320 ? hint : null;
+  { let hv = hint && !SEEN.has('h:' + hint) ? hint : null; S.hintOn = hv && hv === S.hintPrev ? (S.hintOn || 0) + dt : 0; if (hv && S.hintOn > 2.5) { seenOnce('h:' + hv); hv = null; }
+    if (S.hintPrev && S.hintPrev !== hv) seenOnce('h:' + S.hintPrev); S.hintPrev = hv; S.hint = hv; } // a tip shows until that obstacle has passed, once
 }
 function stepParts(dt) {
   for (const p of parts) { p.m.position.x += p.vx * dt; p.m.position.y += p.vy * dt; p.m.position.z += p.vz * dt; p.vy -= 12 * dt; p.life -= dt; if (p.life <= 0) scene.remove(p.m); }
